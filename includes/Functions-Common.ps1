@@ -159,21 +159,27 @@ function Register-RestartTask {
     
     Write-Log "Scheduling script to run after restart: $ScriptPath"
     
-    $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" `
-        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
-    
-    $taskTrigger = New-ScheduledTaskTrigger -AtStartup
-    
-    $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-        -DontStopIfGoingOnBatteries -StartWhenAvailable
-    
-    $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount `
-        -RunLevel Highest
-    
-    Register-ScheduledTask -TaskName $TaskName -Action $taskAction `
-        -Trigger $taskTrigger -Settings $taskSettings -Principal $principal -Force | Out-Null
-    
-    Write-Log "✓ Scheduled task created: $TaskName" -Verbose
+    try {
+        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+            -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+        
+        $taskTrigger = New-ScheduledTaskTrigger -AtStartup
+        
+        $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -StartWhenAvailable
+        
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount `
+            -RunLevel Highest
+        
+        Register-ScheduledTask -TaskName $TaskName -Action $taskAction `
+            -Trigger $taskTrigger -Settings $taskSettings -Principal $principal -Force | Out-Null
+        
+        Write-Log "✓ Scheduled task created: $TaskName" -Verbose
+    }
+    catch {
+        Write-Log "✗ Failed to create scheduled task: $_" -IsError
+        throw $_
+    }
 }
 
 <#
