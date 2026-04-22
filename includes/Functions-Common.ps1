@@ -258,12 +258,12 @@ function Write-ExecutionSummary {
     
     if ($CompletedTasks.Count -gt 0) {
         Write-Log "Completed Tasks:" -Verbose
-        $CompletedTasks | ForEach-Object { Write-Log "  ✓ $_" -Verbose }
+        $CompletedTasks | ForEach-Object { Write-Log "  [OK] $_" -Verbose }
     }
     
     if ($PendingTasks.Count -gt 0) {
         Write-Log "Pending Tasks:" -Verbose
-        $PendingTasks | ForEach-Object { Write-Log "  ⊳ $_" }
+        $PendingTasks   | ForEach-Object { Write-Log "  [>] $_" }
     }
     
     Write-Log "Log file: $(Get-CurrentLogFile)" -Verbose
