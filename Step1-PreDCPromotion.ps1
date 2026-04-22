@@ -60,7 +60,7 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 # Step 1: Initialize
-Write-Host "`n[1/10] Initializing automation environment..." -ForegroundColor Yellow
+Write-Host "[1/10] Initializing automation environment..." -ForegroundColor Yellow
 Initialize-Logging
 Write-Log "Step 1: Pre-DC Promotion Script Started"
 
@@ -123,29 +123,29 @@ try {
     $step2Path = Join-Path $scriptPath "Step2-PostDCPromotion.ps1"
     Register-RestartTask -ScriptPath $step2Path -TaskName "DC-Automation-Step2"
     
-    Write-Host "`n" -ForegroundColor Green
-    Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "║  CONFIGURATION COMPLETE - INITIATING DC PROMOTION             ║" -ForegroundColor Green
-    Write-Host "║                                                                ║" -ForegroundColor Green
-    Write-Host "║  The server will:                                              ║" -ForegroundColor Green
-    Write-Host "║  1. Promote to Domain Controller                               ║" -ForegroundColor Green
-    Write-Host "║  2. Restart automatically                                      ║" -ForegroundColor Green
-    Write-Host "║  3. Run Step 2 automation on next boot                         ║" -ForegroundColor Green
-    Write-Host "║                                                                ║" -ForegroundColor Green
-    Write-Host "║  Domain: havgap-camping.no                                     ║" -ForegroundColor Green
-    Write-Host "║  Computer: $($config.Configuration.Server.ComputerName)                                            ║" -ForegroundColor Green
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host "" -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host " CONFIGURATION COMPLETE - INITIATING DC PROMOTION              " -ForegroundColor Green
+    Write-Host "                                                                " -ForegroundColor Green
+    Write-Host " The server will:                                              " -ForegroundColor Green
+    Write-Host " 1. Promote to Domain Controller                                " -ForegroundColor Green
+    Write-Host " 2. Restart automatically                                       " -ForegroundColor Green
+    Write-Host " 3. Run Step 2 automation on next boot                          " -ForegroundColor Green
+    Write-Host "                                                                " -ForegroundColor Green
+    Write-Host " Domain: havgap-camping.no                                     " -ForegroundColor Green
+    Write-Host " Computer: $($config.Configuration.Server.ComputerName)        " -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
     
     Wait-Execution -Message "Press any key to begin DC promotion (server will restart automatically)..."
     
     # Initiate DC Promotion
-    Write-Host "`nInitiating Domain Controller promotion..." -ForegroundColor Cyan
+    Write-Host "Initiating Domain Controller promotion..." -ForegroundColor Cyan
     Promote-ToDomainController -Config $config -SafeModePassword $safeModePassword
     
 } catch {
     Write-Log "[ERROR] CRITICAL ERROR: $_" -IsError
     Write-Log "Execution halted due to error"
-    Write-Host "`n[ERROR] An error occurred during automation!" -ForegroundColor Red
+    Write-Host "[ERROR] An error occurred during automation!" -ForegroundColor Red
     Write-Host "Check the log file for details: $(Get-CurrentLogFile)" -ForegroundColor Red
     
     Write-ExecutionSummary -PendingTasks @(
@@ -157,7 +157,7 @@ try {
     exit 1
 }
 
-Write-Host "`n" -ForegroundColor Green
+Write-Host "" -ForegroundColor Green
 Write-ExecutionSummary -CompletedTasks @(
     "System validation"
     "Network configuration"
@@ -174,5 +174,5 @@ Write-Log "Step 1: Pre-DC Promotion Script Completed Successfully"
 Write-Log "Server will restart for Domain Controller promotion"
 
 # If we reach here, DC promotion is starting
-Write-Host "`nServer is preparing to restart for DC promotion..." -ForegroundColor Yellow
+Write-Host "Server is preparing to restart for DC promotion..." -ForegroundColor Yellow
 Write-Log "=== End of Step 1 Execution ===" -Verbose
