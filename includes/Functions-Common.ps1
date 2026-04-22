@@ -120,11 +120,11 @@ function Invoke-Command-Logged {
     
     try {
         & $Command
-        Write-Log "✓ Completed: $Description" -Verbose
+        Write-Log " [OK] Completed: $Description" -Verbose
         return $true
     }
     catch {
-        Write-Log "✗ Failed: $Description - $_" -IsError
+        Write-Log " [ERROR] Failed: $Description - $_" -IsError
         
         if (-not $ContinueOnError) {
             throw $_
@@ -181,10 +181,10 @@ function Register-RestartTask {
         Register-ScheduledTask -TaskName $TaskName -Action $taskAction `
             -Trigger $taskTrigger -Settings $taskSettings -Principal $principal -Force | Out-Null
         
-        Write-Log "✓ Scheduled task created: $TaskName" -Verbose
+        Write-Log "[OK] Scheduled task created: $TaskName" -Verbose
     }
     catch {
-        Write-Log "✗ Failed to create scheduled task: $_" -IsError
+        Write-Log " [ERROR] Failed to create scheduled task: $_" -IsError
         throw $_
     }
 }
@@ -216,7 +216,7 @@ function Test-SystemRequirements {
         Write-Log "WARNING: Less than 2GB RAM available" -Warning
     }
     
-    Write-Log "✓ System requirements check completed" -Verbose
+    Write-Log "[OK] System requirements check completed" -Verbose
 }
 
 <#
@@ -263,7 +263,7 @@ function Write-ExecutionSummary {
     
     if ($PendingTasks.Count -gt 0) {
         Write-Log "Pending Tasks:" -Verbose
-        $PendingTasks   | ForEach-Object { Write-Log "  [>] $_" }
+        $PendingTasks   | ForEach-Object { Write-Log "  [ERROR] $_" }
     }
     
     Write-Log "Log file: $(Get-CurrentLogFile)" -Verbose
