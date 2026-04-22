@@ -46,15 +46,15 @@ Set-Location $scriptPath
 . ".\includes\Functions-Roles.ps1"
 
 Write-Host @"
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║     Windows Server 2025 - Domain Controller Automation        ║
-║                                                                ║
-║                   STEP 2: POST-DC PROMOTION                   ║
-║                                                                ║
-║     Configuring Active Directory and domain services...       ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
+================================================================
+                                                                
+     Windows Server 2025 - Domain Controller Automation        
+                                                                
+                   STEP 2: POST-DC PROMOTION                   
+                                                                
+     Configuring Active Directory and domain services...       
+                                                                
+================================================================
 "@ -ForegroundColor Cyan
 
 # Step 1: Initialize
@@ -110,32 +110,32 @@ try {
     Write-Log "All post-promotion tasks completed successfully!"
     Write-Log ""
     Write-Log "=== POST-PROMOTION SUMMARY ==="
-    Write-Log "✓ DC promotion verified"
-    Write-Log "✓ AD structure created"
-    Write-Log "✓ Security groups configured"
-    Write-Log "✓ DHCP configured"
-    Write-Log "✓ DNS configured"
-    Write-Log "✓ Group Policies applied"
-    Write-Log "✓ Password restrictions disabled"
-    Write-Log "✓ Ctrl+Alt+Del disabled"
-    Write-Log "✓ Drive mappings configured"
+    Write-Log "[ERROR] DC promotion verified"
+    Write-Log "[ERROR] AD structure created"
+    Write-Log "[ERROR] Security groups configured"
+    Write-Log "[ERROR] DHCP configured"
+    Write-Log "[ERROR] DNS configured"
+    Write-Log "[ERROR] Group Policies applied"
+    Write-Log "[ERROR] Password restrictions disabled"
+    Write-Log "[ERROR] Ctrl+Alt+Del disabled"
+    Write-Log "[ERROR] Drive mappings configured"
     Write-Log ""
     
     Write-Host "`n" -ForegroundColor Green
-    Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "║  DOMAIN CONTROLLER SETUP COMPLETE!                            ║" -ForegroundColor Green
-    Write-Host "║                                                                ║" -ForegroundColor Green
-    Write-Host "║  Configuration Summary:                                        ║" -ForegroundColor Green
-    Write-Host "║  ✓ Domain: $($config.Configuration.ActiveDirectory.Domain)                              ║" -ForegroundColor Green
-    Write-Host "║  ✓ Controller: $($config.Configuration.Server.ComputerName)                                        ║" -ForegroundColor Green
-    Write-Host "║  ✓ IP Address: $($config.Configuration.Network.StaticIP)                                 ║" -ForegroundColor Green
-    Write-Host "║  ✓ DHCP Pool: $($config.Configuration.DHCP.StartRange) - $($config.Configuration.DHCP.EndRange) ║" -ForegroundColor Green
-    Write-Host "║  ✓ AD OUs: Created and configured                             ║" -ForegroundColor Green
-    Write-Host "║  ✓ Group Policies: Applied                                    ║" -ForegroundColor Green
-    Write-Host "║  ✓ Shared Folders: Configured                                 ║" -ForegroundColor Green
-    Write-Host "║                                                                ║" -ForegroundColor Green
-    Write-Host "║  The domain controller is ready for production use.            ║" -ForegroundColor Green
-    Write-Host "╚════════════════════════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host "║  DOMAIN CONTROLLER SETUP COMPLETE!                            " -ForegroundColor Green
+    Write-Host "║                                                                " -ForegroundColor Green
+    Write-Host "║  Configuration Summary:                                        " -ForegroundColor Green
+    Write-Host "║  [ERROR] Domain: $($config.Configuration.ActiveDirectory.Domain)                              " -ForegroundColor Green
+    Write-Host "║  [ERROR] Controller: $($config.Configuration.Server.ComputerName)                                        " -ForegroundColor Green
+    Write-Host "║  [ERROR] IP Address: $($config.Configuration.Network.StaticIP)                                 " -ForegroundColor Green
+    Write-Host "║  [ERROR] DHCP Pool: $($config.Configuration.DHCP.StartRange) - $($config.Configuration.DHCP.EndRange) " -ForegroundColor Green
+    Write-Host "║  [ERROR] AD OUs: Created and configured                             " -ForegroundColor Green
+    Write-Host "║  [ERROR] Group Policies: Applied                                    " -ForegroundColor Green
+    Write-Host "║  [ERROR] Shared Folders: Configured                                 " -ForegroundColor Green
+    Write-Host "║                                                                " -ForegroundColor Green
+    Write-Host "║  The domain controller is ready for production use.            " -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
     
     Write-ExecutionSummary -CompletedTasks @(
         "DC promotion verification"
@@ -159,9 +159,9 @@ try {
     }
     
 } catch {
-    Write-Log "✗ CRITICAL ERROR: $_" -IsError
+    Write-Log "[ERROR] CRITICAL ERROR: $_" -IsError
     Write-Log "Execution halted due to error"
-    Write-Host "`n✗ An error occurred during post-promotion automation!" -ForegroundColor Red
+    Write-Host "`n[ERROR] An error occurred during post-promotion automation!" -ForegroundColor Red
     Write-Host "Check the log file for details: $(Get-CurrentLogFile)" -ForegroundColor Red
     
     Write-ExecutionSummary -PendingTasks @(

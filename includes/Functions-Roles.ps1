@@ -56,10 +56,10 @@ function Install-ServerRoles {
             Install-WindowsFeature -Name $features -ErrorAction Stop | Out-Null
         }
         
-        Write-Log "✓ Server roles and features installed successfully" -Verbose
+        Write-Log "[ERROR] Server roles and features installed successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to install server roles/features: $_" -IsError
+        Write-Log "[ERROR] Failed to install server roles/features: $_" -IsError
         return $false
     }
 }
@@ -88,17 +88,17 @@ function Install-PowerShellExtensions {
             try {
                 if (-not (Get-Module -ListAvailable -Name $module -ErrorAction SilentlyContinue)) {
                     Install-Module -Name $module -Force -AllowClobber -ErrorAction SilentlyContinue | Out-Null
-                    Write-Log "  ✓ Installed module: $module"
+                    Write-Log "  [ERROR] Installed module: $module"
                 }
             } catch {
-                Write-Log "  ⚠ Could not install module $module (non-critical)" -Warning
+                Write-Log "  [WARNING] Could not install module $module (non-critical)" -Warning
             }
         }
         
-        Write-Log "✓ PowerShell extensions installed successfully" -Verbose
+        Write-Log "[ERROR] PowerShell extensions installed successfully" -Verbose
         return $true
     } catch {
-        Write-Log "⚠ Some PowerShell extensions may not have installed properly" -Warning
+        Write-Log "[WARNING] Some PowerShell extensions may not have installed properly" -Warning
         return $false
     }
 }
@@ -124,17 +124,17 @@ function Initialize-IIS {
         $iisPath = "C:\inetpub\wwwroot"
         
         if (Test-Path $iisPath) {
-            Write-Log "  ✓ IIS root directory: $iisPath"
+            Write-Log "  [ERROR] IIS root directory: $iisPath"
         }
         
         # Enable common IIS features
         Enable-WindowsOptionalFeature -Online -FeatureName IIS-WebServer -NoRestart -ErrorAction SilentlyContinue | Out-Null
         Enable-WindowsOptionalFeature -Online -FeatureName IIS-ASP -NoRestart -ErrorAction SilentlyContinue | Out-Null
         
-        Write-Log "✓ IIS configured successfully" -Verbose
+        Write-Log "[ERROR] IIS configured successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to configure IIS: $_" -IsError
+        Write-Log "[ERROR] Failed to configure IIS: $_" -IsError
         return $false
     }
 }
@@ -152,14 +152,14 @@ function Test-RoleInstallation {
         $role = Get-WindowsFeature -Name $RoleName -ErrorAction Stop
         
         if ($role.Installed) {
-            Write-Log "✓ Role verified: $RoleName" -Verbose
+            Write-Log "[ERROR] Role verified: $RoleName" -Verbose
             return $true
         } else {
-            Write-Log "✗ Role not installed: $RoleName" -Warning
+            Write-Log "[ERROR] Role not installed: $RoleName" -Warning
             return $false
         }
     } catch {
-        Write-Log "✗ Error verifying role: $RoleName - $_" -Warning
+        Write-Log "[ERROR] Error verifying role: $RoleName - $_" -Warning
         return $false
     }
 }
@@ -173,7 +173,7 @@ function Get-InstalledRoles {
         $installed = Get-WindowsFeature | Where-Object { $_.Installed -eq $true }
         return $installed
     } catch {
-        Write-Log "✗ Failed to get installed roles: $_" -IsError
+        Write-Log "[ERROR] Failed to get installed roles: $_" -IsError
         return @()
     }
 }

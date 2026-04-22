@@ -34,14 +34,14 @@ function Set-StaticIPConfiguration {
             -ServerAddresses ($networkConfig.PrimaryDNS, $networkConfig.SecondaryDNS) `
             -ErrorAction Stop
         
-        Write-Log "✓ Static IP configured successfully" -Verbose
+        Write-Log "[ERROR] Static IP configured successfully" -Verbose
         Write-Log "  IP: $($networkConfig.StaticIP)/$($networkConfig.SubnetMask)"
         Write-Log "  Gateway: $($networkConfig.Gateway)"
         Write-Log "  DNS: $($networkConfig.PrimaryDNS), $($networkConfig.SecondaryDNS)"
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure static IP: $_" -IsError
+        Write-Log "[ERROR] Failed to configure static IP: $_" -IsError
         return $false
     }
 }
@@ -74,10 +74,10 @@ function Test-NetworkConnectivity {
     Write-Log "Testing network connectivity to gateway: $gateway"
     
     if (Test-Connection -ComputerName $gateway -Count 2 -Quiet) {
-        Write-Log "✓ Network connectivity verified" -Verbose
+        Write-Log "[ERROR] Network connectivity verified" -Verbose
         return $true
     } else {
-        Write-Log "✗ Cannot reach gateway: $gateway" -Warning
+        Write-Log "[ERROR] Cannot reach gateway: $gateway" -Warning
         return $false
     }
 }
@@ -120,13 +120,13 @@ function Configure-DHCPScope {
             -LeaseDuration ([timespan]::FromSeconds($dhcpConfig.LeaseDuration)) `
             -ErrorAction Stop
         
-        Write-Log "✓ DHCP scope configured successfully" -Verbose
+        Write-Log "[ERROR] DHCP scope configured successfully" -Verbose
         Write-Log "  Scope: $($dhcpConfig.ScopeName)"
         Write-Log "  Range: $($dhcpConfig.StartRange) - $($dhcpConfig.EndRange)"
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure DHCP scope: $_" -IsError
+        Write-Log "[ERROR] Failed to configure DHCP scope: $_" -IsError
         return $false
     }
 }
@@ -164,13 +164,13 @@ function Configure-DNSZone {
             -IPv4Address $Config.Configuration.Network.StaticIP `
             -ErrorAction Stop | Out-Null
         
-        Write-Log "✓ DNS zone configured successfully" -Verbose
+        Write-Log "[ERROR] DNS zone configured successfully" -Verbose
         Write-Log "  Forward Zone: $($dnsConfig.Zone)"
         Write-Log "  Reverse Zone: $($dnsConfig.ReverseZone)"
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure DNS zone: $_" -IsError
+        Write-Log "[ERROR] Failed to configure DNS zone: $_" -IsError
         return $false
     }
 }
@@ -187,10 +187,10 @@ function Test-DNSResolution {
     
     try {
         $result = Resolve-DnsName -Name $HostName -Server $DNSServer -ErrorAction Stop
-        Write-Log "✓ DNS resolution verified for $HostName -> $($result.IPAddress)" -Verbose
+        Write-Log "[ERROR] DNS resolution verified for $HostName -> $($result.IPAddress)" -Verbose
         return $true
     } catch {
-        Write-Log "✗ DNS resolution failed for $HostName on $DNSServer" -Warning
+        Write-Log "[ERROR] DNS resolution failed for $HostName on $DNSServer" -Warning
         return $false
     }
 }

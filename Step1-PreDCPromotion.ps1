@@ -47,16 +47,16 @@ Set-Location $scriptPath
 . ".\includes\Functions-AD.ps1"
 
 Write-Host @"
-╔════════════════════════════════════════════════════════════════╗
-║                                                                ║
-║     Windows Server 2025 - Domain Controller Automation        ║
-║                                                                ║
-║                    STEP 1: PRE-DC PROMOTION                   ║
-║                                                                ║
-║     This script will configure the server for DC promotion    ║
-║                   and initiate the promotion.                 ║
-║                                                                ║
-╚════════════════════════════════════════════════════════════════╝
+================================================================
+                                                                
+     Windows Server 2025 - Domain Controller Automation        
+                                                                
+                    STEP 1: PRE-DC PROMOTION                   
+                                                                
+     This script will configure the server for DC promotion    
+                   and initiate the promotion.                 
+                                                                
+================================================================
 "@ -ForegroundColor Cyan
 
 # Step 1: Initialize
@@ -112,11 +112,11 @@ try {
     Write-Log "All pre-promotion tasks completed successfully!"
     Write-Log ""
     Write-Log "=== PRE-PROMOTION SUMMARY ==="
-    Write-Log "✓ Computer name: $($config.Configuration.Server.ComputerName)"
-    Write-Log "✓ Static IP: $($config.Configuration.Network.StaticIP)"
-    Write-Log "✓ Domain: $($config.Configuration.ActiveDirectory.Domain)"
-    Write-Log "✓ Shared folders created"
-    Write-Log "✓ Required roles installed"
+    Write-Log "[ERROR] Computer name: $($config.Configuration.Server.ComputerName)"
+    Write-Log "[ERROR] Static IP: $($config.Configuration.Network.StaticIP)"
+    Write-Log "[ERROR] Domain: $($config.Configuration.ActiveDirectory.Domain)"
+    Write-Log "[ERROR] Shared folders created"
+    Write-Log "[ERROR] Required roles installed"
     Write-Log ""
     
     # Schedule Step 2 to run after restart
@@ -143,9 +143,9 @@ try {
     Promote-ToDomainController -Config $config -SafeModePassword $safeModePassword
     
 } catch {
-    Write-Log "✗ CRITICAL ERROR: $_" -IsError
+    Write-Log "[ERROR] CRITICAL ERROR: $_" -IsError
     Write-Log "Execution halted due to error"
-    Write-Host "`n✗ An error occurred during automation!" -ForegroundColor Red
+    Write-Host "`n[ERROR] An error occurred during automation!" -ForegroundColor Red
     Write-Host "Check the log file for details: $(Get-CurrentLogFile)" -ForegroundColor Red
     
     Write-ExecutionSummary -PendingTasks @(

@@ -6,25 +6,25 @@ A complete automation project for setting up Windows Server 2025 as a Domain Con
 
 ### Phase 1: Pre-DC Promotion (Step1-PreDCPromotion.ps1)
 Executes on the fresh Windows Server 2025 installation:
-- ✓ Renames computer to DC01
-- ✓ Configures static IP: 192.168.5.10
-- ✓ Installs DHCP, DNS, IIS, AD-DS roles
-- ✓ Creates shared folder structure on D: drive
-- ✓ Promotes server to Domain Controller
-- ✓ Schedules Phase 2 to run after restart
-- ✓ **Initiates automatic restart**
+- [OK] Renames computer to DC01
+- [OK] Configures static IP: 192.168.5.10
+- [OK] Installs DHCP, DNS, IIS, AD-DS roles
+- [OK] Creates shared folder structure on D: drive
+- [OK] Promotes server to Domain Controller
+- [OK] Schedules Phase 2 to run after restart
+- [OK] **Initiates automatic restart**
 
 ### Phase 2: Post-DC Promotion (Step2-PostDCPromotion.ps1)
 Automatically runs after the server restarts:
-- ✓ Verifies DC promotion success
-- ✓ Creates AD Organizational Units
-- ✓ Creates security groups (IT, Finance, HR)
-- ✓ Configures DHCP scope (192.168.5.100-200)
-- ✓ Configures DNS zones
-- ✓ Disables password complexity requirements
-- ✓ Disables Ctrl+Alt+Del for users
-- ✓ Configures drive mappings (Z: -> \\DC01\Public)
-- ✓ Finalizes all configurations
+- [OK] Verifies DC promotion success
+- [OK] Creates AD Organizational Units
+- [OK] Creates security groups (IT, Finance, HR)
+- [OK] Configures DHCP scope (192.168.5.100-200)
+- [OK] Configures DNS zones
+- [OK] Disables password complexity requirements
+- [OK] Disables Ctrl+Alt+Del for users
+- [OK] Configures drive mappings (Z: -> \\DC01\Public)
+- [OK] Finalizes all configurations
 
 ---
 
@@ -255,13 +255,13 @@ After customizing, re-run the scripts. They'll detect existing configurations an
 
 ## Important Notes
 
-⚠️ **CRITICAL:**
+[CRITICAL]:
 - Change the Safe Mode password in `server-config.xml` before running!
 - Ensure gateway is set to 192.168.5.1 and is reachable
 - Don't interrupt Step 1 during DC promotion
 - Step 2 runs automatically - no action needed
 
-✓ **RECOMMENDED:**
+[RECOMMENDED]:
 - Back up the server after successful setup
 - Test domain join with client machines
 - Verify DHCP clients can obtain IPs

@@ -33,14 +33,14 @@ function Configure-PasswordPolicy {
         # Force policy update
         Invoke-GPUpdate -Force -ErrorAction SilentlyContinue | Out-Null
         
-        Write-Log "✓ Password policy configured successfully" -Verbose
+        Write-Log "[OK] Password policy configured successfully" -Verbose
         Write-Log "  Maximum Password Age: $($policyConfig.MaximumPasswordAge) days"
         Write-Log "  Minimum Password Length: $($policyConfig.MinimumPasswordLength) characters"
         Write-Log "  Require Complexity: $($policyConfig.RequireComplexity)"
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure password policy: $_" -IsError
+        Write-Log "[ERROR] Failed to configure password policy: $_" -IsError
         return $false
     }
 }
@@ -64,22 +64,22 @@ function Configure-SecurityPolicy {
         if ($securityPolicy.DisableCtrlAltDel -eq "true") {
             Set-GPRegistryValue -Guid $gpo.Id -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
                 -ValueName "DisableCAD" -Value 1 -Type DWord -ErrorAction Stop | Out-Null
-            Write-Log "  ✓ Ctrl+Alt+Del disabled"
+            Write-Log "  [OK] Ctrl+Alt+Del disabled"
         }
         
         if ($securityPolicy.DisableLockScreen -eq "true") {
             Set-GPRegistryValue -Guid $gpo.Id -Key "HKLM\Software\Policies\Microsoft\Windows\Control Panel\Desktop" `
                 -ValueName "ScreenSaverIsSecure" -Value 0 -Type DWord -ErrorAction Stop | Out-Null
-            Write-Log "  ✓ Lock screen disabled"
+            Write-Log "  [OK] Lock screen disabled"
         }
         
         Invoke-GPUpdate -Force -ErrorAction SilentlyContinue | Out-Null
         
-        Write-Log "✓ Security policies configured successfully" -Verbose
+        Write-Log "[OK] Security policies configured successfully" -Verbose
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure security policies: $_" -IsError
+        Write-Log "[ERROR] Failed to configure security policies: $_" -IsError
         return $false
     }
 }
@@ -106,9 +106,9 @@ function Configure-DriveMappings {
         $gpo = Get-GPO -Name $gpoName -ErrorAction SilentlyContinue
         if (-not $gpo) {
             $gpo = New-GPO -Name $gpoName -ErrorAction Stop
-            Write-Log "  ✓ Created GPO: $gpoName"
+            Write-Log "  [OK] Created GPO: $gpoName"
         } else {
-            Write-Log "  ↻ GPO already exists: $gpoName"
+            Write-Log "  [INFO] GPO already exists: $gpoName"
         }
         
         # Configure drive mappings
@@ -117,14 +117,14 @@ function Configure-DriveMappings {
                 -Key "HKCU\Network\$($mapping.DriveLetter -replace ':')" `
                 -ValueName "RemotePath" -Value $mapping.Path -Type String -ErrorAction Stop | Out-Null
             
-            Write-Log "  ✓ Configured mapping: $($mapping.DriveLetter) -> $($mapping.Path)"
+            Write-Log "  [OK] Configured mapping: $($mapping.DriveLetter) -> $($mapping.Path)"
         }
         
-        Write-Log "✓ Drive mappings configured successfully" -Verbose
+        Write-Log "[OK] Drive mappings configured successfully" -Verbose
         
         return $true
     } catch {
-        Write-Log "✗ Failed to configure drive mappings: $_" -IsError
+        Write-Log "[ERROR] Failed to configure drive mappings: $_" -IsError
         return $false
     }
 }
@@ -153,11 +153,11 @@ function Apply-GroupPolicy {
         # Force group policy update
         Invoke-GPUpdate -Force -ErrorAction SilentlyContinue | Out-Null
         
-        Write-Log "✓ Group Policy applied to OU: $OUPath" -Verbose
+        Write-Log "[OK] Group Policy applied to OU: $OUPath" -Verbose
         
         return $true
     } catch {
-        Write-Log "✗ Failed to apply Group Policy: $_" -IsError
+        Write-Log "[ERROR] Failed to apply Group Policy: $_" -IsError
         return $false
     }
 }
@@ -173,10 +173,10 @@ function Test-GroupPolicyApplication {
     
     try {
         $gpo = Get-GPO -Name $GPOName -ErrorAction Stop
-        Write-Log "✓ GPO verified: $GPOName" -Verbose
+        Write-Log "[OK] GPO verified: $GPOName" -Verbose
         return $true
     } catch {
-        Write-Log "✗ GPO not found: $GPOName" -Warning
+        Write-Log "[ERROR] GPO not found: $GPOName" -Warning
         return $false
     }
 }

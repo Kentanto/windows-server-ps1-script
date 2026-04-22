@@ -1,23 +1,23 @@
-# ✅ Setup Status & Next Steps
+# Setup Status & Next Steps
 
-## What Was Fixed ✅
+## What Was Fixed [OK]
 
 ### 1. **Code Syntax Error** (FIXED)
 - **Issue:** Duplicate code at the end of `Functions-Common.ps1` causing syntax errors
-- **Status:** ✅ RESOLVED - File cleaned up
+- **Status:** [OK] RESOLVED - File cleaned up
 
 ### 2. **Missing SafeModePassword** (FIXED)
 - **Issue:** `config/server-config.xml` had empty SafeModePassword field
-- **Status:** ✅ RESOLVED - Placeholder password added (`ChangeMe@12345`)
+- **Status:** [OK] RESOLVED - Placeholder password added (`ChangeMe@12345`)
 - **Action Required:** Replace with your own secure password before running
 
 ### 3. **No Running Instructions** (FIXED)
 - **Issue:** No clear guide on how to execute on Windows Server 2025 VM
-- **Status:** ✅ RESOLVED - Created `RUN_ON_VM.md` with detailed steps
+- **Status:** [OK] RESOLVED - Created `RUN_ON_VM.md` with detailed steps
 
 ### 4. **PowerShell Warnings** (NOT BLOCKING)
 - **Issue:** Some PSScriptAnalyzer warnings about function naming and parameter types
-- **Status:** ℹ️ DOCUMENTED - These don't prevent execution, see `POWERSHELL_WARNINGS.md`
+- **Status:** [INFO] DOCUMENTED - These don't prevent execution, see `POWERSHELL_WARNINGS.md`
 
 ---
 
@@ -41,7 +41,7 @@
 
 ---
 
-## 🚀 When Ready to Run
+## When Ready to Run
 
 ### On Your Windows Server 2025 VM:
 
@@ -57,7 +57,7 @@ cd C:\Windows-Server-DC-Automation
 # 3. Run Phase 1
 .\Step1-PreDCPromotion.ps1
 
-# ↓ Server will restart automatically ↓
+# V Server will restart automatically V
 
 # Phase 2 runs automatically after restart
 # If not, manually run:
@@ -79,25 +79,25 @@ cd C:\Windows-Server-DC-Automation
 
 ---
 
-## 🎯 What Will Be Configured
+## What Will Be Configured
 
 **Phase 1 (Before Restart):**
-- ✅ Computer name: DC01
-- ✅ Static IP: 192.168.5.10
-- ✅ Roles: AD-DS, DNS, DHCP, IIS
-- ✅ Shared folders on D: drive
-- ✅ Promotes to Domain Controller
-- ✅ Schedules Phase 2
-- ✅ Auto-restarts
+- [OK] Computer name: DC01
+- [OK] Static IP: 192.168.5.10
+- [OK] Roles: AD-DS, DNS, DHCP, IIS
+- [OK] Shared folders on D: drive
+- [OK] Promotes to Domain Controller
+- [OK] Schedules Phase 2
+- [OK] Auto-restarts
 
 **Phase 2 (After Restart):**
-- ✅ Verifies DC promotion
-- ✅ Creates OUs: IT, Finance, HR
-- ✅ Creates security groups
-- ✅ Configures DHCP: 192.168.5.100-200
-- ✅ Configures DNS zones
-- ✅ Applies Group Policies
-- ✅ Sets up drive mappings
+- [OK] Verifies DC promotion
+- [OK] Creates OUs: IT, Finance, HR
+- [OK] Creates security groups
+- [OK] Configures DHCP: 192.168.5.100-200
+- [OK] Configures DNS zones
+- [OK] Applies Group Policies
+- [OK] Sets up drive mappings
 
 ---
 

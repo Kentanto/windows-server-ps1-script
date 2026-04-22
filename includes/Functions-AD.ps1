@@ -15,7 +15,7 @@ function Rename-ServerComputer {
     $currentName = $env:COMPUTERNAME
     
     if ($currentName -eq $newName) {
-        Write-Log "✓ Computer already named: $newName" -Verbose
+        Write-Log "[ERROR] Computer already named: $newName" -Verbose
         return $true
     }
     
@@ -23,11 +23,11 @@ function Rename-ServerComputer {
     
     try {
         Rename-Computer -NewName $newName -Force -ErrorAction Stop
-        Write-Log "✓ Computer renamed to: $newName" -Verbose
+        Write-Log "[ERROR] Computer renamed to: $newName" -Verbose
         Write-Log "  Restart required for name change to take effect"
         return $true
     } catch {
-        Write-Log "✗ Failed to rename computer: $_" -IsError
+        Write-Log "[ERROR] Failed to rename computer: $_" -IsError
         return $false
     }
 }
@@ -67,12 +67,12 @@ function Promote-ToDomainController {
             -SkipPreChecks:$false `
             -ErrorAction Stop | Out-Null
         
-        Write-Log "✓ Domain Controller promotion initiated" -Verbose
+        Write-Log "[ERROR] Domain Controller promotion initiated" -Verbose
         Write-Log "  Server will restart automatically"
         
         return $true
     } catch {
-        Write-Log "✗ Failed to promote Domain Controller: $_" -IsError
+        Write-Log "[ERROR] Failed to promote Domain Controller: $_" -IsError
         return $false
     }
 }
@@ -92,14 +92,14 @@ function Test-DCPromotion {
         # Check if domain controller
         $dc = Get-ADDomainController -Identity $env:COMPUTERNAME -ErrorAction Stop
         
-        Write-Log "✓ Domain Controller verification successful" -Verbose
+        Write-Log "[ERROR] Domain Controller verification successful" -Verbose
         Write-Log "  Domain: $($dc.Domain)"
         Write-Log "  Hostname: $($dc.HostName)"
         Write-Log "  Operating System: $($dc.OperatingSystem)"
         
         return $true
     } catch {
-        Write-Log "✗ Domain Controller verification failed: $_" -Warning
+        Write-Log "[ERROR] Domain Controller verification failed: $_" -Warning
         return $false
     }
 }
@@ -126,9 +126,9 @@ function Create-OUStructure {
             # Check if OU exists
             if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$ouPath'" -ErrorAction SilentlyContinue)) {
                 New-ADOrganizationalUnit -Name $ou.Name -Path $domainDN -ErrorAction Stop | Out-Null
-                Write-Log "  ✓ Created OU: $($ou.Name)"
+                Write-Log "  [ERROR] Created OU: $($ou.Name)"
             } else {
-                Write-Log "  ↻ OU already exists: $($ou.Name)"
+                Write-Log "  [INFO] OU already exists: $($ou.Name)"
             }
             
             # Create sub-OUs
@@ -138,18 +138,18 @@ function Create-OUStructure {
                     
                     if (-not (Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$subOUPath'" -ErrorAction SilentlyContinue)) {
                         New-ADOrganizationalUnit -Name $subOU.Name -Path $ouPath -ErrorAction Stop | Out-Null
-                        Write-Log "    ✓ Created Sub-OU: $($subOU.Name)"
+                        Write-Log "    [ERROR] Created Sub-OU: $($subOU.Name)"
                     } else {
-                        Write-Log "    ↻ Sub-OU already exists: $($subOU.Name)"
+                        Write-Log "    [INFO] Sub-OU already exists: $($subOU.Name)"
                     }
                 }
             }
         }
         
-        Write-Log "✓ OU structure created successfully" -Verbose
+        Write-Log "[ERROR] OU structure created successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to create OU structure: $_" -IsError
+        Write-Log "[ERROR] Failed to create OU structure: $_" -IsError
         return $false
     }
 }
@@ -182,16 +182,16 @@ function Create-SecurityGroups {
                     -Path $groupsOUPath `
                     -ErrorAction Stop | Out-Null
                 
-                Write-Log "  ✓ Created group: $groupName"
+                Write-Log "  [ERROR] Created group: $groupName"
             } else {
-                Write-Log "  ↻ Group already exists: $groupName"
+                Write-Log "  [INFO] Group already exists: $groupName"
             }
         }
         
-        Write-Log "✓ Security groups created successfully" -Verbose
+        Write-Log "[ERROR] Security groups created successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to create security groups: $_" -IsError
+        Write-Log "[ERROR] Failed to create security groups: $_" -IsError
         return $false
     }
 }

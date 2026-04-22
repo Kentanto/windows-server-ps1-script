@@ -23,9 +23,9 @@ function Add-SharedFolders {
             # Create directory if not exists
             if (-not (Test-Path $path)) {
                 New-Item -ItemType Directory -Path $path -Force | Out-Null
-                Write-Log "  ✓ Created directory: $path"
+                Write-Log "  [ERROR] Created directory: $path"
             } else {
-                Write-Log "  ↻ Directory already exists: $path"
+                Write-Log "  [INFO] Directory already exists: $path"
             }
             
             # Set NTFS permissions
@@ -64,10 +64,10 @@ function Add-SharedFolders {
             Write-Log "    Permissions configured for: $name"
         }
         
-        Write-Log "✓ Shared folders created successfully" -Verbose
+        Write-Log "[ERROR] Shared folders created successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to create shared folders: $_" -IsError
+        Write-Log "[ERROR] Failed to create shared folders: $_" -IsError
         return $false
     }
 }
@@ -99,16 +99,16 @@ function Add-SmbShares {
                     -FullAccess "Everyone" `
                     -ErrorAction Stop | Out-Null
                 
-                Write-Log "  ✓ Created share: $name -> $path"
+                Write-Log "  [ERROR] Created share: $name -> $path"
             } else {
-                Write-Log "  ↻ Share already exists: $name"
+                Write-Log "  [INFO] Share already exists: $name"
             }
         }
         
-        Write-Log "✓ SMB shares created successfully" -Verbose
+        Write-Log "[ERROR] SMB shares created successfully" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to create SMB shares: $_" -IsError
+        Write-Log "[ERROR] Failed to create SMB shares: $_" -IsError
         return $false
     }
 }
@@ -135,10 +135,10 @@ function Set-SharePermissions {
         Grant-SmbShareAccess -Name $ShareName -AccountName $Identity `
             -AccessRight $permissionLevel -Force -ErrorAction Stop | Out-Null
         
-        Write-Log "✓ Permissions set: $ShareName -> $Identity ($Permission)" -Verbose
+        Write-Log "[ERROR] Permissions set: $ShareName -> $Identity ($Permission)" -Verbose
         return $true
     } catch {
-        Write-Log "✗ Failed to set share permissions: $_" -IsError
+        Write-Log "[ERROR] Failed to set share permissions: $_" -IsError
         return $false
     }
 }
@@ -182,15 +182,15 @@ function Test-SharedFolders {
             $share = $shares | Where-Object { $_.Name -eq $folder.Name }
             
             if ($share) {
-                Write-Log "  ✓ Share verified: $($folder.Name)" -Verbose
+                Write-Log "  [ERROR] Share verified: $($folder.Name)" -Verbose
             } else {
-                Write-Log "  ✗ Share not found: $($folder.Name)" -Warning
+                Write-Log "  [ERROR] Share not found: $($folder.Name)" -Warning
             }
         }
         
         return $true
     } catch {
-        Write-Log "✗ Failed to verify shared folders: $_" -IsError
+        Write-Log "[ERROR] Failed to verify shared folders: $_" -IsError
         return $false
     }
 }
