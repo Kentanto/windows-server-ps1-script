@@ -135,7 +135,7 @@ function Invoke-Command-Logged {
 
 <#
 .SYNOPSIS
-    Pauses execution and prompts for continuation
+    Waits for user input and prompts for continuation
 #>
 function Wait-Execution {
     param(
@@ -149,7 +149,7 @@ function Wait-Execution {
 
 <#
 .SYNOPSIS
-    Schedules a script to run after restart
+    Registers a script to run after system restart
 #>
 function Register-RestartTask {
     param(
