@@ -5,7 +5,7 @@
     <Domain>havgap-camping.no</Domain>
     <ForestFunctionalLevel>2025</ForestFunctionalLevel>
     <DomainFunctionalLevel>2025</DomainFunctionalLevel>
-    <SafeModePassword></SafeModePassword>
+    <SafeModePassword>ChangeMe@12345</SafeModePassword>
   </ActiveDirectory>
 
   <!-- Server Configuration -->
