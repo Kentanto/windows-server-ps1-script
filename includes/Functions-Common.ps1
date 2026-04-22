@@ -160,9 +160,16 @@ function Register-RestartTask {
     Write-Log "Scheduling script to run after restart: $ScriptPath"
     
     try {
-        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" `
-            -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
-        
+        $arguments = @(
+            "-NoProfile"
+            "-ExecutionPolicy Bypass"
+            "-File `"$ScriptPath`""
+        ) -join ' '
+
+        $taskAction = New-ScheduledTaskAction `
+            -Execute "powershell.exe" `
+            -Argument $arguments
+                
         $taskTrigger = New-ScheduledTaskTrigger -AtStartup
         
         $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
