@@ -1,5 +1,5 @@
 # ===== CONFIG =====
-$IP        = "192.168.5.15"
+$IP        = "192.168.5.45"
 $Prefix    = 24
 $Gateway   = "192.168.5.1"
 $DNS       = "192.168.5.1"
@@ -61,10 +61,6 @@ Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorActio
         }
     }
 Log-Green "Waiting for network stack to settle..."
-Start-Sleep -Seconds 5
-Disable-NetAdapter -InterfaceIndex $ifIndex -Confirm:$false
-Start-Sleep -Seconds 3
-Enable-NetAdapter -InterfaceIndex $ifIndex -Confirm:$false
 Start-Sleep -Seconds 5
 # --- SET IP WITH GATEWAY ---
 try {
