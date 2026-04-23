@@ -1,8 +1,8 @@
-# ===== CONFIG (EDIT THESE) =====
+# ===== CONFIG =====
 $IP        = "192.168.5.15"
-$Prefix    = 24              # 255.255.255.0 = /24
+$Prefix    = 24
 $Gateway   = "192.168.5.1"
-$DNS       = "192.168.5.1"  # usually your DC itself
+$DNS       = "192.168.5.1"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -16,41 +16,73 @@ function Log-Red {
 }
 
 # ===== MAIN =====
-try {
-    # Get active adapter
-    $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
 
-    if (-not $adapter) {
-        Log-Red "No active network adapter found"
-        exit
+# Get adapter
+$adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+
+if (-not $adapter) {
+    Log-Red "No active network adapter found"
+    return
+}
+
+$ifIndex = $adapter.InterfaceIndex
+Log-Green "Using adapter: $($adapter.Name)"
+
+# --- FORCE CLEAN STATE ---
+
+# Disable DHCP
+try {
+    Set-NetIPInterface -InterfaceIndex $ifIndex -Dhcp Disabled -ErrorAction Stop
+    Log-Green "DHCP disabled"
+} catch {
+    Log-Red "DHCP disable skipped or failed"
+}
+
+# Remove all IPv4 addresses
+Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        try {
+            Remove-NetIPAddress -InterfaceIndex $ifIndex -IPAddress $_.IPAddress -Confirm:$false -ErrorAction Stop
+            Log-Green "Removed IP $($_.IPAddress)"
+        } catch {
+            Log-Red "Could not remove IP $($_.IPAddress)"
+        }
     }
 
-    Log-Green "Using adapter: $($adapter.Name)"
+# Remove default routes (fix gateway conflicts)
+Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        try {
+            Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction Stop
+            Log-Green "Removed old gateway"
+        } catch {
+            Log-Red "Could not remove gateway"
+        }
+    }
 
-    # Remove existing IPs
-    Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+# --- APPLY NEW CONFIG ---
 
-    Log-Green "Old IP addresses removed"
-
-    # Set new IP
+try {
     New-NetIPAddress `
-        -InterfaceIndex $adapter.InterfaceIndex `
+        -InterfaceIndex $ifIndex `
         -IPAddress $IP `
         -PrefixLength $Prefix `
-        -DefaultGateway $Gateway
+        -DefaultGateway $Gateway `
+        -ErrorAction Stop
 
-    Log-Green "New IP address set: $IP"
+    Log-Green "IP set to $IP"
+} catch {
+    Log-Red "Failed to set IP (may already exist)"
+}
 
-    # Set DNS
+# Set DNS (always overwrite)
+try {
     Set-DnsClientServerAddress `
-        -InterfaceIndex $adapter.InterfaceIndex `
-        -ServerAddresses $DNS
+        -InterfaceIndex $ifIndex `
+        -ServerAddresses $DNS `
+        -ErrorAction Stop
 
-    Log-Green "DNS server set: $DNS"
-
+    Log-Green "DNS set to $DNS"
+} catch {
+    Log-Red "Failed to set DNS"
 }
-catch {
-    Log-Red "Failed: $_"
-}
-
