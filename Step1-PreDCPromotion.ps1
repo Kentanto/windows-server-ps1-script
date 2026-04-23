@@ -1,8 +1,8 @@
 # ===== CONFIG =====
-$IP        = 192.168.5.15
+$IP        = "192.168.5.15"
 $Prefix    = 24
-$Gateway   = 192.168.5.1
-$DNS       = 192.168.5.1
+$Gateway   = "192.168.5.1"
+$DNS       = "192.168.5.1"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -60,7 +60,8 @@ Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorActio
             Log-Red "Could not remove gateway"
         }
     }
-
+Log-Green "Waiting for network stack to settle..."
+Start-Sleep -Seconds 5
 # --- SET IP WITH GATEWAY ---
 try {
     New-NetIPAddress `
@@ -88,7 +89,7 @@ try {
 Start-Sleep -Seconds 15
 try {
     New-NetIPAddress `
-        -InterfaceAlias "Ethernet"`
+        -InterfaceIndex $ifIndex `
         -IPAddress $IP `
         -PrefixLength $Prefix `
 
