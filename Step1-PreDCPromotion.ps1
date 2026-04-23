@@ -78,7 +78,7 @@ Start-Sleep -Seconds 2
 
 try {
     New-NetIPAddress `
-        -InterfaceIndex $ifIndex `
+        -InterfaceAlias "Ethernet"`
         -IPAddress $IP `
         -PrefixLength $Prefix `
         -ErrorAction SilentlyContinue
