@@ -18,7 +18,7 @@ function Log-Red {
 # ===== MAIN =====
 
 # Get adapter
-$adapter = Get-NetAdapter -InterfaceAlias "Ethernet"
+$adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
 
 if (-not $adapter) {
     Log-Red "No active network adapter found"
@@ -62,6 +62,10 @@ Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorActio
     }
 Log-Green "Waiting for network stack to settle..."
 Start-Sleep -Seconds 5
+Disable-NetAdapter -InterfaceIndex $ifIndex -Confirm:$false
+Start-Sleep -Seconds 3
+Enable-NetAdapter -InterfaceIndex $ifIndex -Confirm:$false
+Start-Sleep -Seconds 5
 # --- SET IP WITH GATEWAY ---
 try {
     New-NetIPAddress `
@@ -85,3 +89,4 @@ try {
 } catch {
     Log-Red "Failed to set DNS"
 }
+
