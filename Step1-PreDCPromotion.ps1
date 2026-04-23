@@ -50,18 +50,18 @@ Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction Silen
     }
 
 # Remove default routes (fix gateway conflicts)
+# --- REMOVE EXISTING GATEWAY FIRST ---
 Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
     ForEach-Object {
         try {
             Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction Stop
-            Log-Green "Removed old gateway"
+            Log-Green "Removed existing gateway"
         } catch {
             Log-Red "Could not remove gateway"
         }
     }
 
-# --- APPLY NEW CONFIG ---
-
+# --- SET IP WITH GATEWAY ---
 try {
     New-NetIPAddress `
         -InterfaceIndex $ifIndex `
@@ -70,12 +70,24 @@ try {
         -DefaultGateway $Gateway `
         -ErrorAction Stop
 
-    Log-Green "IP set to $IP"
+    Log-Green "IP and gateway set"
 } catch {
-    Log-Red "Failed to set IP (may already exist)"
+    Log-Red "Failed to set IP"
+}
+Start-Sleep -Seconds 2
+
+try {
+    New-NetIPAddress `
+        -InterfaceIndex $ifIndex `
+        -IPAddress $IP `
+        -PrefixLength $Prefix `
+        -ErrorAction SilentlyContinue
+
+    Log-Green "Second pass IP applied"
+} catch {
+    Log-Red "Second pass skipped"
 }
 
-# Set DNS (always overwrite)
 try {
     Set-DnsClientServerAddress `
         -InterfaceIndex $ifIndex `
