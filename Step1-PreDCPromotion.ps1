@@ -18,7 +18,7 @@ function Log-Red {
 # ===== MAIN =====
 
 # Get adapter
-$adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+$adapter = Get-NetAdapter -InterfaceAlias "Ethernet"
 
 if (-not $adapter) {
     Log-Red "No active network adapter found"
@@ -84,16 +84,4 @@ try {
     Log-Green "DNS set to $DNS"
 } catch {
     Log-Red "Failed to set DNS"
-}
-
-Start-Sleep -Seconds 15
-try {
-    New-NetIPAddress `
-        -InterfaceIndex $ifIndex `
-        -IPAddress $IP `
-        -PrefixLength $Prefix `
-
-    Log-Green "Second pass IP applied"
-} catch {
-    Log-Red "Second pass skipped"
 }
