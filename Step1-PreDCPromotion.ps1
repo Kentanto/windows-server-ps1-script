@@ -1,8 +1,8 @@
 # ===== CONFIG =====
-$IP        = "192.168.5.15"
+$IP        = 192.168.5.15
 $Prefix    = 24
-$Gateway   = "192.168.5.1"
-$DNS       = "192.168.5.1"
+$Gateway   = 192.168.5.1
+$DNS       = 192.168.5.1
 
 # ===== LOGGING =====
 function Log-Green {
@@ -74,20 +74,6 @@ try {
 } catch {
     Log-Red "Failed to set IP"
 }
-Start-Sleep -Seconds 2
-
-try {
-    New-NetIPAddress `
-        -InterfaceAlias "Ethernet"`
-        -IPAddress $IP `
-        -PrefixLength $Prefix `
-        -ErrorAction SilentlyContinue
-
-    Log-Green "Second pass IP applied"
-} catch {
-    Log-Red "Second pass skipped"
-}
-
 try {
     Set-DnsClientServerAddress `
         -InterfaceIndex $ifIndex `
@@ -97,4 +83,16 @@ try {
     Log-Green "DNS set to $DNS"
 } catch {
     Log-Red "Failed to set DNS"
+}
+
+Start-Sleep -Seconds 15
+try {
+    New-NetIPAddress `
+        -InterfaceAlias "Ethernet"`
+        -IPAddress $IP `
+        -PrefixLength $Prefix `
+
+    Log-Green "Second pass IP applied"
+} catch {
+    Log-Red "Second pass skipped"
 }
