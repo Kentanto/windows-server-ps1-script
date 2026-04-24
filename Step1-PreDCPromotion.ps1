@@ -108,3 +108,56 @@ try {
 else {
     Log-Green "Skipping IP configuration"}
 
+if (Confirm-Step "Configuse DHCP?") {
+
+    # ===== CONFIG =====
+$ScopeName = "LAN Scope"
+$ScopeID   = "192.168.5.0"
+$StartIP   = "192.168.5.150"
+$EndIP     = "192.168.5.200"
+$Subnet    = "255.255.255.0"
+$Gateway   = "192.168.5.1"
+$DNS       = "192.168.5.1"
+$LeaseTime = "2.00:00:00"
+
+try {
+    # Check if scope already exists
+    $existing = Get-DhcpServerv4Scope -ScopeId $ScopeID -ErrorAction SilentlyContinue
+
+    if ($existing) {
+        Log-Green "Scope already exists. Skipping creation."
+    }
+    else {
+        Add-DhcpServerv4Scope `
+            -Name $ScopeName `
+            -StartRange $StartIP `
+            -EndRange $EndIP `
+            -SubnetMask $Subnet `
+            -State Active `
+            -LeaseDuration $LeaseTime `
+            -ErrorAction Stop
+
+        Log-Green "DHCP scope created"
+    }
+
+    # Set gateway option (Router = 003)
+    Set-DhcpServerv4OptionValue `
+        -ScopeId $ScopeID `
+        -Router $Gateway
+
+    Log-Green "Gateway set"
+
+    # Set DNS option (006)
+    Set-DhcpServerv4OptionValue `
+        -ScopeId $ScopeID `
+        -DnsServer $DNS
+
+    Log-Green "DNS set"
+
+    Log-Green "DHCP configuration complete"
+}
+catch {
+    Log-Red "DHCP setup failed: $_"
+}
+
+} 
