@@ -1,3 +1,32 @@
+function Confirm-Step {
+    param([string]$Message)
+
+    if ($script:AutoAccept) {
+        Log-Green "Auto-accepted: $Message"
+        return $true
+    }
+
+    Write-Host ""
+    Write-Host "$Message" -ForegroundColor Cyan
+    Write-Host "[Y] Yes  [N] No  [A] Yes to all" -ForegroundColor Yellow
+
+    $choice = Read-Host "Choose"
+
+    switch ($choice.ToLower()) {
+        "y" { return $true }
+        "n" { return $false }
+        "a" {
+            $script:AutoAccept = $true
+            Log-Green "Auto-accept enabled for remaining steps"
+            return $true
+        }
+        default {
+            Log-Red "Invalid input, defaulting to No"
+            return $false
+        }
+    }
+}
+
 # ===== CONFIG =====
 $IP        = "192.168.5.45"
 $Prefix    = 24
@@ -15,9 +44,8 @@ function Log-Red {
     Write-Host "[ERROR] $msg" -ForegroundColor Red
 }
 
-# ===== MAIN =====
-
-# Get adapter
+# ===== MAIN IP Configuration =====
+if (Confirm-Step "Set static IP?") {
 $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
 
 if (-not $adapter) {
@@ -28,9 +56,7 @@ if (-not $adapter) {
 $ifIndex = $adapter.InterfaceIndex
 Log-Green "Using adapter: $($adapter.Name)"
 
-# --- FORCE CLEAN STATE ---
 
-# Disable DHCP
 try {
     Set-NetIPInterface -InterfaceIndex $ifIndex -Dhcp Disabled -ErrorAction Stop
     Log-Green "DHCP disabled"
@@ -38,7 +64,6 @@ try {
     Log-Red "DHCP disable skipped or failed"
 }
 
-# Remove all IPv4 addresses
 Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     ForEach-Object {
         try {
@@ -49,8 +74,6 @@ Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction Silen
         }
     }
 
-# Remove default routes (fix gateway conflicts)
-# --- REMOVE EXISTING GATEWAY FIRST ---
 Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
     ForEach-Object {
         try {
@@ -60,9 +83,6 @@ Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorActio
             Log-Red "Could not remove gateway"
         }
     }
-Log-Green "Waiting for network stack to settle..."
-Start-Sleep -Seconds 5
-# --- SET IP WITH GATEWAY ---
 try {
     New-NetIPAddress `
         -InterfaceIndex $ifIndex `
@@ -84,5 +104,7 @@ try {
     Log-Green "DNS set to $DNS"
 } catch {
     Log-Red "Failed to set DNS"
-}
+}}
+else {
+    Log-Green "Skipping IP configuration"}
 
