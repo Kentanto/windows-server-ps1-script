@@ -1,3 +1,5 @@
+
+# ===== Function to confirm each stepwith user =====
 function Confirm-Step {
     param([string]$Message)
 
@@ -26,6 +28,8 @@ function Confirm-Step {
         }
     }
 }
+
+
 
 # ===== CONFIG =====
 $IP        = "192.168.5.45"
@@ -108,9 +112,11 @@ try {
 else {
     Log-Green "Skipping IP configuration"}
 
-if (Confirm-Step "Configuse DHCP?") {
+if (Confirm-Step "Configure DHCP?") {
 
-    # ===== CONFIG =====
+
+# ===== DHCP Configuration=====
+
 $ScopeName = "LAN Scope"
 $ScopeID   = "192.168.5.0"
 $StartIP   = "192.168.5.150"
@@ -121,7 +127,37 @@ $DNS       = "192.168.5.1"
 $LeaseTime = "2.00:00:00"
 
 try {
-    # Check if scope already exists
+    try {
+    Restart-Service DHCPServer -Force
+    Log-Green "DHCP service restarted to apply DNS settings"
+    }
+    catch {
+        Log-Red "Failed to restart DHCP service"
+    }
+    $serverIP = (Get-NetIPAddress -AddressFamily IPv4 |
+        Where-Object { $_.IPAddress -like "192.168.*" } |
+        Select-Object -First 1 -ExpandProperty IPAddress)
+
+    $serverName = "$env:COMPUTERNAME.$env:USERDNSDOMAIN"
+
+    try {
+        $existing = Get-DhcpServerInDC -ErrorAction SilentlyContinue |
+            Where-Object { $_.DnsName -eq $serverName }
+
+        if ($existing) {
+            Log-Green "DHCP already authorized in AD"
+        }
+        else {
+            Add-DhcpServerInDC -DnsName $serverName -IPAddress $serverIP
+            Log-Green "DHCP authorized in AD"
+        }
+    }
+    catch {
+        Log-Red "Failed to authorize DHCP: $_"
+    }
+
+    start-sleep -Seconds 5
+
     $existing = Get-DhcpServerv4Scope -ScopeId $ScopeID -ErrorAction SilentlyContinue
 
     if ($existing) {
@@ -161,3 +197,153 @@ catch {
 }
 
 } 
+
+# ===== GPO and ou/user Configuration =====
+
+if (Confirm-Step "Add OU and users/groups?") {
+
+# ===== CONFIG =====
+$RootOU = "Lab"
+
+$ChildOUs = @(
+    "Users",
+    "Admins",
+    "Computers"
+)
+
+$UsersToCreate = @(
+    "Hans",
+    "Live",
+    "Kine"
+)
+
+$GroupName  = "LeadTeam"
+$PolicyName = "LeadTeamPolicy"
+
+$Domain = Get-ADDomain
+$DomainDN = $Domain.DistinguishedName
+
+# ===== CREATE ROOT OU =====
+try {
+    $rootPath = "OU=$RootOU,$DomainDN"
+
+    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$RootOU'" -ErrorAction SilentlyContinue)) {
+        New-ADOrganizationalUnit -Name $RootOU -Path $DomainDN
+        Log-Green "Created root OU: $RootOU"
+    } else {
+        Log-Green "Root OU already exists"
+    }
+}
+catch {
+    Log-Red "Failed to create root OU: $_"
+}
+
+# ===== CREATE CHILD OUs =====
+foreach ($ou in $ChildOUs) {
+    try {
+        if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ou'" -SearchBase $rootPath -ErrorAction SilentlyContinue)) {
+            New-ADOrganizationalUnit -Name $ou -Path $rootPath
+            Log-Green "Created OU: $ou"
+        } else {
+            Log-Green "OU already exists: $ou"
+        }
+    }
+    catch {
+        Log-Red "Failed to create OU $ou : $_"
+    }
+}
+
+# ===== CREATE GROUP =====
+try {
+    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
+        New-ADGroup `
+            -Name $GroupName `
+            -GroupScope Global `
+            -Path $DomainDN
+
+        Log-Green "Created group: $GroupName"
+    }
+    else {
+        Log-Green "Group already exists: $GroupName"
+    }
+}
+catch {
+    Log-Red "Failed to create group: $_"
+}
+
+# ===== CREATE FGPP =====
+try {
+    if (-not (Get-ADFineGrainedPasswordPolicy -Filter "Name -eq '$PolicyName'" -ErrorAction SilentlyContinue)) {
+
+        New-ADFineGrainedPasswordPolicy `
+            -Name $PolicyName `
+            -Precedence 1 `
+            -MinPasswordLength 0 `
+            -PasswordHistoryCount 0 `
+            -ComplexityEnabled $false `
+            -MaxPasswordAge (New-TimeSpan -Days 0) `
+            -MinPasswordAge (New-TimeSpan -Days 0)
+
+        Log-Green "Created password policy"
+    }
+    else {
+        Log-Green "Password policy already exists"
+    }
+}
+catch {
+    Log-Red "Failed to create password policy: $_"
+}
+
+# ===== LINK FGPP TO GROUP =====
+try {
+    Add-ADFineGrainedPasswordPolicySubject `
+        -Identity $PolicyName `
+        -Subjects $GroupName `
+        -ErrorAction SilentlyContinue
+
+    Log-Green "Linked policy to group"
+}
+catch {
+    Log-Red "Failed to link policy: $_"
+}
+
+# ===== CREATE USERS =====
+foreach ($user in $UsersToCreate) {
+    try {
+        $userPath = "OU=Users,$rootPath"
+
+        if (-not (Get-ADUser -Filter "SamAccountName -eq '$user'" -ErrorAction SilentlyContinue)) {
+
+            $password = ConvertTo-SecureString "" -AsPlainText -Force
+
+            New-ADUser `
+                -Name $user `
+                -SamAccountName $user `
+                -UserPrincipalName "$user@$($Domain.DNSRoot)" `
+                -Path $userPath `
+                -AccountPassword $password `
+                -Enabled $true `
+                -ChangePasswordAtLogon $true
+
+            Log-Green "Created user: $user"
+        }
+        else {
+            Log-Green "User already exists: $user"
+        }
+
+        # ===== ADD USER TO GROUP =====
+        try {
+            Add-ADGroupMember -Identity $GroupName -Members $user -ErrorAction SilentlyContinue
+            Log-Green "Added $user to $GroupName"
+        }
+        catch {
+            Log-Red "Failed to add $user to group"
+        }
+
+    }
+    catch {
+        Log-Red "Failed to create user $user : $_"
+    }
+}
+
+}
