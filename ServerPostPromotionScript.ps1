@@ -348,18 +348,17 @@ foreach ($user in $UsersToCreate) {
             Log-Red "Failed to add Administrator to group"
         }
 
-        try {
-            Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
-            Log-Green "Administrator must change password at next logon"
-        }
-        catch {
-            Log-Red "Failed to set password change requirement"
-        }
-
     }
     catch {
         Log-Red "Failed to create user $user : $_"
     }
+}
+try {
+    Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
+    Log-Green "Administrator must change password at next logon"
+}
+catch {
+    Log-Red "Failed to set password change requirement"
 }
 
 }
