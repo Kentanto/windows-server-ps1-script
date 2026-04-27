@@ -353,12 +353,37 @@ foreach ($user in $UsersToCreate) {
         Log-Red "Failed to create user $user : $_"
     }
 }
+
 try {
+    $tempPass = ConvertTo-SecureString "Admin123!" -AsPlainText -Force
+
+    Set-ADAccountPassword `
+        -Identity "Administrator" `
+        -NewPassword $tempPass `
+        -Reset
+
     Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
-    Log-Green "Administrator must change password at next logon"
+
+    Log-Green "Administrator password reset and must change at next logon"
 }
 catch {
-    Log-Red "Failed to set password change requirement"
+    Log-Red "Failed to reset Administrator password"
 }
 
+}
+
+try {
+    Import-Module GroupPolicy
+
+    Set-GPRegistryValue `
+        -Name "Default Domain Policy" `
+        -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
+        -ValueName "DisableCAD" `
+        -Type DWord `
+        -Value 1
+
+    Log-Green "CTRL+ALT+DEL disabled in Default Domain Policy"
+}
+catch {
+    Log-Red "Failed to modify Default Domain Policy: $_"
 }
