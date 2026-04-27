@@ -314,7 +314,7 @@ foreach ($user in $UsersToCreate) {
 
         if (-not (Get-ADUser -Filter "SamAccountName -eq '$user'" -ErrorAction SilentlyContinue)) {
 
-            $password = ConvertTo-SecureString "" -AsPlainText -Force
+            $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
             New-ADUser `
                 -Name $user `
