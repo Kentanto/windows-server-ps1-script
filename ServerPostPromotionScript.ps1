@@ -334,10 +334,26 @@ foreach ($user in $UsersToCreate) {
         # ===== ADD USER TO GROUP =====
         try {
             Add-ADGroupMember -Identity $GroupName -Members $user -ErrorAction SilentlyContinue
-            Log-Green "Added $user to $GroupName"
+            Log-Green "Added $user to $GroupName"            
         }
         catch {
             Log-Red "Failed to add $user to group"
+        }
+
+        try {
+            Add-ADGroupMember -Identity $GroupName -Members "Administrator" -ErrorAction SilentlyContinue
+            Log-Green "Added Administrator to $GroupName"        
+        }
+        catch {
+            Log-Red "Failed to add Administrator to group"
+        }
+
+        try {
+            Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
+            Log-Green "Administrator must change password at next logon"
+        }
+        catch {
+            Log-Red "Failed to set password change requirement"
         }
 
     }
