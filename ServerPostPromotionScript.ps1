@@ -283,9 +283,21 @@ Log-Green "Added Hans and Live to LeadTeam group"
 
 # ===== FIX ADMINISTRATOR =====
 try {
+    # Step 1: Disable "password never expires"
+    Set-ADUser -Identity "Administrator" -PasswordNeverExpires $false
+    Log-Green "Disabled 'password never expires' for Administrator"
+
+    # Step 2: Set temporary password
     $tempPass = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
-    Set-ADAccountPassword -Identity "Administrator" -NewPassword $tempPass -Reset
+    Set-ADAccountPassword `
+        -Identity "Administrator" `
+        -NewPassword $tempPass `
+        -Reset
+
+    Log-Green "Administrator password reset"
+
+    # Step 3: Force change at next logon
     Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
 
     Log-Green "Administrator will change password at next logon"
