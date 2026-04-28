@@ -339,13 +339,14 @@ try {
     Log-Green "Disabled CTRL+ALT+DEL"
 }
 catch {
-    Log-Red "Failed to update Default Domain Policy"
+    Log-Red "Failed to update Default Domain Policy: $_"
 }
 
 # ===== FORCE PASSWORD CHANGE VIA DOMAIN POLICY =====
 
 try {
     Set-ADDefaultDomainPasswordPolicy `
+        -Identity $Domain.DistinguishedName `
         -MinPasswordLength 0 `
         -ComplexityEnabled $false `
         -PasswordHistoryCount 0 `
@@ -354,7 +355,7 @@ try {
     Log-Green "Updated Default Domain Password Policy"
 }
 catch {
-    Log-Red "Failed to update domain password policy"
+    Log-Red "Failed to update domain password policy '$_'"
 }
 
 # ===== APPLY GPO =====
