@@ -200,7 +200,12 @@ catch {
 
 # ===== GPO and ou/user Configuration =====
 
-if (Confirm-Step "Add OU and users/groups?") {
+
+
+if (Confirm-Step "Add OU, users, groups, and GPOs?") {
+
+Import-Module ActiveDirectory
+Import-Module GroupPolicy
 
 # ===== CONFIG =====
 $RootOU = "Lab"
@@ -208,173 +213,110 @@ $RootOU = "Lab"
 $ChildOUs = @(
     "Users",
     "Admins",
-    "Computers"
+    "Computers",
+    "LeadTeam",
+    "IT"
 )
-
-$UsersToCreate = @(
-    "Hans",
-    "Live",
-    "Kine"
-)
-
-$GroupName  = "LeadTeam"
-$PolicyName = "LeadTeamPolicy"
 
 $Domain = Get-ADDomain
 $DomainDN = $Domain.DistinguishedName
+$rootPath = "OU=$RootOU,$DomainDN"
 
 # ===== CREATE ROOT OU =====
-try {
-    $rootPath = "OU=$RootOU,$DomainDN"
-
-    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$RootOU'" -ErrorAction SilentlyContinue)) {
-        New-ADOrganizationalUnit -Name $RootOU -Path $DomainDN
-        Log-Green "Created root OU: $RootOU"
-    } else {
-        Log-Green "Root OU already exists"
-    }
-}
-catch {
-    Log-Red "Failed to create root OU: $_"
+if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$RootOU'" -ErrorAction SilentlyContinue)) {
+    New-ADOrganizationalUnit -Name $RootOU -Path $DomainDN
+    Log-Green "Created root OU"
 }
 
 # ===== CREATE CHILD OUs =====
 foreach ($ou in $ChildOUs) {
-    try {
-        if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ou'" -SearchBase $rootPath -ErrorAction SilentlyContinue)) {
-            New-ADOrganizationalUnit -Name $ou -Path $rootPath
-            Log-Green "Created OU: $ou"
-        } else {
-            Log-Green "OU already exists: $ou"
-        }
-    }
-    catch {
-        Log-Red "Failed to create OU $ou : $_"
+    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ou'" -SearchBase $rootPath -ErrorAction SilentlyContinue)) {
+        New-ADOrganizationalUnit -Name $ou -Path $rootPath
+        Log-Green "Created OU: $ou"
     }
 }
 
 # ===== CREATE GROUP =====
-try {
-    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
-        New-ADGroup `
-            -Name $GroupName `
-            -GroupScope Global `
-            -Path $DomainDN
+$GroupName = "LeadTeam"
 
-        Log-Green "Created group: $GroupName"
-    }
-    else {
-        Log-Green "Group already exists: $GroupName"
-    }
-}
-catch {
-    Log-Red "Failed to create group: $_"
-}
-
-# ===== CREATE FGPP =====
-try {
-    if (-not (Get-ADFineGrainedPasswordPolicy -Filter "Name -eq '$PolicyName'" -ErrorAction SilentlyContinue)) {
-
-        New-ADFineGrainedPasswordPolicy `
-            -Name $PolicyName `
-            -Precedence 1 `
-            -MinPasswordLength 0 `
-            -PasswordHistoryCount 0 `
-            -ComplexityEnabled $false `
-            -MaxPasswordAge (New-TimeSpan -Days 0) `
-            -MinPasswordAge (New-TimeSpan -Days 0)
-
-        Log-Green "Created password policy"
-    }
-    else {
-        Log-Green "Password policy already exists"
-    }
-}
-catch {
-    Log-Red "Failed to create password policy: $_"
-}
-
-# ===== LINK FGPP TO GROUP =====
-try {
-    Add-ADFineGrainedPasswordPolicySubject `
-        -Identity $PolicyName `
-        -Subjects $GroupName `
-        -ErrorAction SilentlyContinue
-
-    Log-Green "Linked policy to group"
-}
-catch {
-    Log-Red "Failed to link policy: $_"
+if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
+    New-ADGroup -Name $GroupName -GroupScope Global -Path $DomainDN
+    Log-Green "Created group: $GroupName"
 }
 
 # ===== CREATE USERS =====
-foreach ($user in $UsersToCreate) {
-    try {
-        $userPath = "OU=Users,$rootPath"
 
-        if (-not (Get-ADUser -Filter "SamAccountName -eq '$user'" -ErrorAction SilentlyContinue)) {
+function Create-User {
+    param($Name, $OU)
 
-            $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
+    $userPath = "OU=$OU,$rootPath"
 
-            New-ADUser `
-                -Name $user `
-                -SamAccountName $user `
-                -UserPrincipalName "$user@$($Domain.DNSRoot)" `
-                -Path $userPath `
-                -AccountPassword $password `
-                -Enabled $true `
-                -ChangePasswordAtLogon $true
+    if (-not (Get-ADUser -Filter "SamAccountName -eq '$Name'" -ErrorAction SilentlyContinue)) {
 
-            Log-Green "Created user: $user"
-        }
-        else {
-            Log-Green "User already exists: $user"
-        }
+        $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
-        # ===== ADD USER TO GROUP =====
-        try {
-            Add-ADGroupMember -Identity $GroupName -Members $user -ErrorAction SilentlyContinue
-            Log-Green "Added $user to $GroupName"            
-        }
-        catch {
-            Log-Red "Failed to add $user to group"
-        }
+        New-ADUser `
+            -Name $Name `
+            -SamAccountName $Name `
+            -UserPrincipalName "$Name@$($Domain.DNSRoot)" `
+            -Path $userPath `
+            -AccountPassword $password `
+            -Enabled $true
 
-        try {
-            Add-ADGroupMember -Identity $GroupName -Members "Administrator" -ErrorAction SilentlyContinue
-            Log-Green "Added Administrator to $GroupName"        
-        }
-        catch {
-            Log-Red "Failed to add Administrator to group"
-        }
+        # Force password change AFTER creation
+        Set-ADUser -Identity $Name -ChangePasswordAtLogon $true
 
-    }
-    catch {
-        Log-Red "Failed to create user $user : $_"
+        Log-Green "Created user: $Name in $OU"
     }
 }
 
+# Hans + Live → LeadTeam OU
+Create-User "Hans" "LeadTeam"
+Create-User "Live" "LeadTeam"
+
+# Kine → IT OU
+Create-User "Kine" "IT"
+
+# Add Hans + Live to group
+Add-ADGroupMember -Identity "LeadTeam" -Members "Hans","Live" -ErrorAction SilentlyContinue
+Log-Green "Added Hans and Live to LeadTeam group"
+
+# ===== FIX ADMINISTRATOR =====
 try {
-    $tempPass = ConvertTo-SecureString "Admin123!" -AsPlainText -Force
+    $tempPass = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
-    Set-ADAccountPassword `
-        -Identity "Administrator" `
-        -NewPassword $tempPass `
-        -Reset
-
+    Set-ADAccountPassword -Identity "Administrator" -NewPassword $tempPass -Reset
     Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
 
-    Log-Green "Administrator password reset and must change at next logon"
+    Log-Green "Administrator will change password at next logon"
 }
 catch {
-    Log-Red "Failed to reset Administrator password"
+    Log-Red "Failed Administrator fix: $_"
 }
 
+# ===== CREATE GPOs FOR OUs =====
+
+foreach ($ou in $ChildOUs) {
+
+    $gpoName = "$ou-GPO"
+
+    if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
+
+        New-GPO -Name $gpoName | Out-Null
+        Log-Green "Created GPO: $gpoName"
+
+        New-GPLink `
+            -Name $gpoName `
+            -Target "OU=$ou,$rootPath" `
+            -LinkEnabled Yes
+
+        Log-Green "Linked GPO to OU: $ou"
+    }
 }
+
+# ===== MODIFY DEFAULT DOMAIN POLICY =====
 
 try {
-    Import-Module GroupPolicy
-
     Set-GPRegistryValue `
         -Name "Default Domain Policy" `
         -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
@@ -382,8 +324,29 @@ try {
         -Type DWord `
         -Value 1
 
-    Log-Green "CTRL+ALT+DEL disabled in Default Domain Policy"
+    Log-Green "Disabled CTRL+ALT+DEL"
 }
 catch {
-    Log-Red "Failed to modify Default Domain Policy: $_"
+    Log-Red "Failed to update Default Domain Policy"
+}
+
+# ===== FORCE PASSWORD CHANGE VIA DOMAIN POLICY =====
+
+try {
+    Set-ADDefaultDomainPasswordPolicy `
+        -MinPasswordLength 0 `
+        -ComplexityEnabled $false `
+        -PasswordHistoryCount 0 `
+        -MaxPasswordAge (New-TimeSpan -Days 3650)
+
+    Log-Green "Updated Default Domain Password Policy"
+}
+catch {
+    Log-Red "Failed to update domain password policy"
+}
+
+# ===== APPLY GPO =====
+gpupdate /force
+
+Log-Green "Configuration complete"
 }
