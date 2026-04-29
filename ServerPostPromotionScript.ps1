@@ -193,8 +193,7 @@ catch {
 }
 
 } 
-
-# ===== GPO and ou/user Configuration =====
+# ===== GPO AND OU / USER CONFIGURATION =====
 
 if (Confirm-Step "Add OU, users, groups, and GPOs?") {
 
@@ -211,7 +210,7 @@ $ChildOUs = @(
     "IT"
 )
 
-$Domain = Get-ADDomain
+$Domain   = Get-ADDomain
 $DomainDN = $Domain.DistinguishedName
 $rootPath = "OU=$RootOU,$DomainDN"
 
@@ -234,7 +233,6 @@ if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyConti
     Log-Green "Created group: $GroupName"
 }
 
-
 function Create-User {
     param($Name, $OU)
 
@@ -252,7 +250,6 @@ function Create-User {
             -AccountPassword $password `
             -Enabled $true
 
-        # Force password change AFTER creation
         Set-ADUser -Identity $Name -ChangePasswordAtLogon $true
 
         Log-Green "Created user: $Name in $OU"
@@ -261,34 +258,27 @@ function Create-User {
 
 Create-User "Hans" "LeadTeam"
 Create-User "Live" "LeadTeam"
-
 Create-User "Kine" "IT"
 
 Add-ADGroupMember -Identity "LeadTeam" -Members "Hans","Live" -ErrorAction SilentlyContinue
 Log-Green "Added Hans and Live to LeadTeam group"
 
+# ===== ADMIN FIX =====
 try {
     Set-ADUser -Identity "Administrator" -PasswordNeverExpires $false
-    Log-Green "Disabled 'password never expires' for Administrator"
 
     $tempPass = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
-    Set-ADAccountPassword `
-        -Identity "Administrator" `
-        -NewPassword $tempPass `
-        -Reset
-
-    Log-Green "Administrator password reset"
-
+    Set-ADAccountPassword -Identity "Administrator" -NewPassword $tempPass -Reset
     Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
 
-    Log-Green "Administrator will change password at next logon"
+    Log-Green "Administrator password reset + forced change"
 }
 catch {
     Log-Red "Failed Administrator fix: $_"
 }
 
-
+# ===== OU GPOS =====
 foreach ($ou in $ChildOUs) {
 
     $gpoName = "$ou-GPO"
@@ -298,15 +288,12 @@ foreach ($ou in $ChildOUs) {
         New-GPO -Name $gpoName | Out-Null
         Log-Green "Created GPO: $gpoName"
 
-        New-GPLink `
-            -Name $gpoName `
-            -Target "OU=$ou,$rootPath" `
-            -LinkEnabled Yes
-
-        Log-Green "Linked GPO to OU: $ou"
+        New-GPLink -Name $gpoName -Target "OU=$ou,$rootPath" -LinkEnabled Yes
+        Log-Green "Linked GPO: $gpoName to $ou"
     }
 }
 
+# ===== DEFAULT DOMAIN POLICY TWEAK =====
 try {
     Set-GPRegistryValue `
         -Name "Default Domain Policy" `
@@ -318,9 +305,10 @@ try {
     Log-Green "Disabled CTRL+ALT+DEL"
 }
 catch {
-    Log-Red "Failed to update Default Domain Policy: $_"
+    Log-Red "Failed Default Domain Policy update: $_"
 }
 
+# ===== PASSWORD POLICY =====
 try {
     Set-ADDefaultDomainPasswordPolicy `
         -Identity $Domain.DistinguishedName `
@@ -329,26 +317,26 @@ try {
         -PasswordHistoryCount 0 `
         -MaxPasswordAge (New-TimeSpan -Days 3650)
 
-    Log-Green "Updated Default Domain Password Policy"
+    Log-Green "Updated password policy"
 }
 catch {
-    Log-Red "Failed to update domain password policy '$_'"
+    Log-Red "Password policy failed: $_"
 }
 
 gpupdate /force
-
-Log-Green "Configuration complete"
+Log-Green "AD setup complete"
 }
 
-# ===== SHARED FOLDERS =====
+# ===== SHARED FOLDERS + DRIVE MAPPING (CLEAN FINAL VERSION) =====
 
 if (Confirm-Step "set up shared folders and permissions?") {
 
 $BasePath = "D:\Shares"
 $WorkPath = "$BasePath\Work"
 $LeadPath = "$BasePath\LeadTeam"
-$Server   = $env:COMPUTERNAME
-$Domain   = Get-ADDomain
+
+$Domain = Get-ADDomain
+$Server = $Domain.DNSRoot
 $DomainDN = $Domain.DistinguishedName
 
 foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
@@ -356,48 +344,38 @@ foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
         New-Item -ItemType Directory -Path $path -Force | Out-Null
         Log-Green "Created folder: $path"
     }
-    else {
-        Log-Green "Folder already exists: $path"
-    }
 }
 
+# ===== NTFS =====
+function Set-CleanAcl($path, $group) {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
 
-try {
-    function Set-CleanAcl($path, $group) {
-        $acl = New-Object System.Security.AccessControl.DirectorySecurity
-        $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow"
+    )))
 
-        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow"
-        )))
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+        "Administrators","FullControl","ContainerInherit,ObjectInherit","None","Allow"
+    )))
 
-        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-            "Administrators","FullControl","ContainerInherit,ObjectInherit","None","Allow"
-        )))
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+        $group,"Modify","ContainerInherit,ObjectInherit","None","Allow"
+    )))
 
-        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-            $group,"Modify","ContainerInherit,ObjectInherit","None","Allow"
-        )))
-
-        Set-Acl -Path $path -AclObject $acl
-    }
-
-    Set-CleanAcl $WorkPath "Domain Users"
-    Set-CleanAcl $LeadPath "LeadTeam"
-
-    Log-Green "NTFS permissions applied cleanly"
-}
-catch {
-    Log-Red "NTFS setup failed: $_"
+    Set-Acl -Path $path -AclObject $acl
 }
 
+Set-CleanAcl $WorkPath "Domain Users"
+Set-CleanAcl $LeadPath "LeadTeam"
+
+Log-Green "NTFS set"
+
+# ===== SMB SHARES =====
 function Ensure-Share($name, $path, $group) {
 
-    $existing = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
-
-    if ($existing) {
+    if (Get-SmbShare -Name $name -ErrorAction SilentlyContinue) {
         Remove-SmbShare -Name $name -Force -Confirm:$false
-        Start-Sleep -Milliseconds 500
     }
 
     New-SmbShare -Name $name -Path $path -FullAccess "Administrators" -ChangeAccess $group | Out-Null
@@ -409,104 +387,40 @@ function Ensure-Share($name, $path, $group) {
 Ensure-Share "Work" $WorkPath "Domain Users"
 Ensure-Share "LeadTeam" $LeadPath "LeadTeam"
 
-$gpoWork = "DriveMap-Work"
+# ===== CLEAN GPO DRIVE MAPPING (ONLY METHOD USED) =====
 
-if (-not (Get-GPO -Name $gpoWork -ErrorAction SilentlyContinue)) {
-    New-GPO -Name $gpoWork | Out-Null
-    Log-Green "Created GPO: $gpoWork"
-}
+function Add-DriveGPO($name, $letter, $share, $ou) {
 
-$targetOU = "OU=Lab,$DomainDN"
+    if (-not (Get-GPO -Name $name -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $name | Out-Null
+    }
 
-if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoWork) {
-    New-GPLink -Name $gpoWork -Target $targetOU -LinkEnabled Yes | Out-Null
-}
+    if ((Get-GPInheritance -Target $ou).GpoLinks.DisplayName -notcontains $name) {
+        New-GPLink -Name $name -Target $ou -LinkEnabled Yes
+    }
 
-$gpoIdWork = (Get-GPO $gpoWork).Id
-$gpoPathWork = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdWork}\User\Preferences\Drives"
+    $gpo = Get-GPO $name
 
-New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
-
-@"
-<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
-    <Drive name="Work Drive" status="Enabled">
-        <Properties action="U" letter="W" path="\\$Server\Work" />
+    $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<DriveMaps>
+    <Drive>
+        <Properties action="U" driveLetter="$letter" path="\\$Server\$share" persistent="0" />
     </Drive>
-</Drives>
-"@ | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
-
-Log-Green "Work drive mapped"
-
-$gpoLead = "DriveMap-LeadTeam"
-
-if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
-    New-GPO -Name $gpoLead | Out-Null
-}
-
-$leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
-
-if ((Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName -notcontains $gpoLead) {
-    New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
-}
-
-$gpoIdLead = (Get-GPO $gpoLead).Id
-$gpoPathLead = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdLead}\User\Preferences\Drives"
-
-New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
-
-@"
-<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
-    <Drive name="LeadTeam Drive" status="Enabled">
-        <Properties action="U" letter="L" path="\\$Server\LeadTeam" />
-    </Drive>
-</Drives>
-"@ | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
-
-Log-Green "LeadTeam drive mapped"
-
-}
-
-# ===== AUTO DRIVE MAPPING =====
-
-if (Confirm-Step "configure automatic drive mapping?") {
-
-$Domain = Get-ADDomain
-$DomainName = $Domain.DNSRoot
-$Server = $env:COMPUTERNAME
-
-$ScriptName = "map-drives.bat"
-$ScriptPath = "\\$DomainName\NETLOGON\$ScriptName"
-
-if (-not (Test-Path $ScriptPath)) {
-
-$ScriptContent = @"
-net use W: /delete /yes >nul 2>&1
-net use W: \\$Server\Work /persistent:no
-
-net use L: /delete /yes >nul 2>&1
-net use L: \\$Server\LeadTeam /persistent:no
+</DriveMaps>
 "@
 
-    $ScriptContent | Out-File $ScriptPath -Encoding ASCII
-    Log-Green "Created logon script in NETLOGON"
-}
-else {
-    Log-Green "Logon script already exists"
+    $path = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$($gpo.Id)}\User\Preferences\Drives"
+
+    New-Item -ItemType Directory -Path $path -Force | Out-Null
+    $xml | Out-File "$path\Drives.xml" -Encoding UTF8
+
+    Log-Green "Mapped $share -> $letter"
 }
 
-
-foreach ($user in $Users) {
-    try {
-        Set-ADUser -Identity $user -ScriptPath $ScriptName
-        Log-Green "Assigned script to $user"
-    }
-    catch {
-        Log-Red "Failed to assign script to $user"
-    }
-}
+Add-DriveGPO "DriveMap-Work" "W:" "Work" "OU=Lab,$DomainDN"
+Add-DriveGPO "DriveMap-LeadTeam" "L:" "LeadTeam" "OU=LeadTeam,OU=Lab,$DomainDN"
 
 gpupdate /force
-
-Log-Green "Done - LOG OFF and log back in as user"
+Log-Green "Shares + drives complete"
 }
-
