@@ -367,13 +367,14 @@ Log-Green "Configuration complete"
 # ===== SHARED FOLDERS =====
 
 if (Confirm-Step "set up shared folders and permissions?") {
-    # ===== SHARED FOLDERS + AUTO MAPPING =====
 
-$BasePath = "C:\Shares"
+# ===== CONFIG =====
+$BasePath = "D:\Shares"
 $WorkPath = "$BasePath\Work"
 $LeadPath = "$BasePath\LeadTeam"
 $Server   = $env:COMPUTERNAME
-$DomainDN = (Get-ADDomain).DistinguishedName
+$Domain   = Get-ADDomain
+$DomainDN = $Domain.DistinguishedName
 
 # ===== CREATE FOLDERS (SAFE) =====
 foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
@@ -403,7 +404,6 @@ catch {
 
 # ===== SMB SHARES (SAFE) =====
 
-# Work share
 if (-not (Get-SmbShare -Name "Work" -ErrorAction SilentlyContinue)) {
     New-SmbShare -Name "Work" -Path $WorkPath -FullAccess "Domain Users" | Out-Null
     Log-Green "Created share: Work"
@@ -411,15 +411,17 @@ if (-not (Get-SmbShare -Name "Work" -ErrorAction SilentlyContinue)) {
     Log-Green "Share already exists: Work"
 }
 
-# LeadTeam share
 if (-not (Get-SmbShare -Name "LeadTeam" -ErrorAction SilentlyContinue)) {
     New-SmbShare -Name "LeadTeam" -Path $LeadPath -FullAccess "LeadTeam" | Out-Null
     Log-Green "Created share: LeadTeam"
 } else {
     Log-Green "Share already exists: LeadTeam"
 }
+
+
 Set-SmbShare -Name "LeadTeam" -FolderEnumerationMode AccessBased
-# ===== GPO: WORK DRIVE (ALL USERS) =====
+
+# ===== GPO: WORK DRIVE =====
 
 $gpoWork = "DriveMap-Work"
 
@@ -428,22 +430,33 @@ if (-not (Get-GPO -Name $gpoWork -ErrorAction SilentlyContinue)) {
     Log-Green "Created GPO: $gpoWork"
 }
 
-# Link if not already linked
-$gpoLinks = (Get-GPInheritance -Target "OU=Lab,$DomainDN").GpoLinks.DisplayName
-if ($gpoLinks -notcontains $gpoWork) {
-    New-GPLink -Name $gpoWork -Target "OU=Lab,$DomainDN" -LinkEnabled Yes | Out-Null
-    Log-Green "Linked $gpoWork to Lab OU"
+$targetOU = "OU=Lab,$DomainDN"
+
+if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoWork) {
+    New-GPLink -Name $gpoWork -Target $targetOU -LinkEnabled Yes | Out-Null
+    Log-Green "Linked $gpoWork"
 }
 
-# Set drive mapping
-Set-GPRegistryValue `
-    -Name $gpoWork `
-    -Key "HKCU\Network\W" `
-    -ValueName "RemotePath" `
-    -Type String `
-    -Value "\\$Server\Work"
+# Create Drive Maps XML (WORK)
+$gpoIdWork = (Get-GPO $gpoWork).Id
+$gpoPathWork = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdWork}\User\Preferences\Drives"
 
-# ===== GPO: LEADTEAM DRIVE (RESTRICTED) =====
+if (-not (Test-Path $gpoPathWork)) {
+    New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
+}
+
+$xmlWork = @"
+<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
+    <Drive name="Work Drive" status="Enabled">
+        <Properties action="U" letter="W" path="\\$Server\Work" />
+    </Drive>
+</Drives>
+"@
+
+$xmlWork | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
+Log-Green "Configured Work drive mapping"
+
+# ===== GPO: LEADTEAM DRIVE =====
 
 $gpoLead = "DriveMap-LeadTeam"
 
@@ -452,27 +465,33 @@ if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
     Log-Green "Created GPO: $gpoLead"
 }
 
-# Link only to LeadTeam OU
 $leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
-$gpoLinksLead = (Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName
 
-if ($gpoLinksLead -notcontains $gpoLead) {
+if ((Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName -notcontains $gpoLead) {
     New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
-    Log-Green "Linked $gpoLead to LeadTeam OU"
+    Log-Green "Linked $gpoLead"
 }
 
-# Set drive mapping
-Set-GPRegistryValue `
-    -Name $gpoLead `
-    -Key "HKCU\Network\L" `
-    -ValueName "RemotePath" `
-    -Type String `
-    -Value "\\$Server\LeadTeam"
+# Create Drive Maps XML (LEADTEAM)
+$gpoIdLead = (Get-GPO $gpoLead).Id
+$gpoPathLead = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdLead}\User\Preferences\Drives"
 
-Log-Green "Drive mappings configured"
+if (-not (Test-Path $gpoPathLead)) {
+    New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
+}
 
-# ===== APPLY =====
+$xmlLead = @"
+<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
+    <Drive name="LeadTeam Drive" status="Enabled">
+        <Properties action="U" letter="L" path="\\$Server\LeadTeam" />
+    </Drive>
+</Drives>
+"@
+
+$xmlLead | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
+Log-Green "Configured LeadTeam drive mapping"
+
 gpupdate /force
 
-Log-Green "Done"
+Log-Green "Done - log off and log back in to see mapped drives"
 }
