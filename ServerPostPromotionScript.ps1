@@ -495,3 +495,76 @@ gpupdate /force
 
 Log-Green "Done - log off and log back in to see mapped drives"
 }
+
+# ===== AUTO DRIVE MAPPING (LOGON SCRIPT METHOD) =====
+
+if (Confirm-Step "configure automatic drive mapping?") {
+
+# ===== CONFIG =====
+$Domain      = Get-ADDomain
+$DomainName  = $Domain.DNSRoot
+$DomainDN    = $Domain.DistinguishedName
+$Server      = $env:COMPUTERNAME
+
+$ScriptName  = "map-drives.ps1"
+$ScriptPath  = "\\$DomainName\SYSVOL\$DomainName\scripts\$ScriptName"
+$GPOName     = "DriveMap-Script"
+$TargetOU    = "OU=Lab,$DomainDN"
+
+# ===== CREATE LOGON SCRIPT (SAFE) =====
+if (-not (Test-Path $ScriptPath)) {
+
+$ScriptContent = @"
+# Map Work drive (everyone)
+net use W: /delete /yes >nul 2>&1
+net use W: \\$Server\Work /persistent:no
+
+# Map LeadTeam drive (only if access exists)
+net use L: /delete /yes >nul 2>&1
+net use L: \\$Server\LeadTeam /persistent:no
+"@
+
+    $ScriptContent | Out-File $ScriptPath -Encoding ASCII
+    Log-Green "Created logon script"
+}
+else {
+    Log-Green "Logon script already exists"
+}
+
+# ===== CREATE GPO (SAFE) =====
+if (-not (Get-GPO -Name $GPOName -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $GPOName | Out-Null
+    Log-Green "Created GPO: $GPOName"
+}
+else {
+    Log-Green "GPO already exists: $GPOName"
+}
+
+# ===== LINK GPO (SAFE) =====
+$existingLinks = (Get-GPInheritance -Target $TargetOU).GpoLinks.DisplayName
+
+if ($existingLinks -notcontains $GPOName) {
+    New-GPLink -Name $GPOName -Target $TargetOU -LinkEnabled Yes | Out-Null
+    Log-Green "Linked GPO to Lab OU"
+}
+else {
+    Log-Green "GPO already linked"
+}
+
+# ===== ASSIGN LOGON SCRIPT =====
+try {
+    Set-GPLogonScript `
+        -Name $GPOName `
+        -ScriptName $ScriptName
+
+    Log-Green "Assigned logon script"
+}
+catch {
+    Log-Red "Failed to assign logon script"
+}
+
+# ===== APPLY =====
+gpupdate /force
+
+Log-Green "Done - LOG OFF and log back in as user to see drives"
+}
