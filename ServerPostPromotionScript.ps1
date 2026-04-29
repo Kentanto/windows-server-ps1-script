@@ -347,15 +347,15 @@ if (Confirm-Step "set up shared folders and permissions?") {
             $acl.SetAccessRuleProtection($true, $false)
 
             $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "SYSTEM\", "FullControl\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+                "SYSTEM", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
             )))
 
             $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-                "Administrators\", "FullControl\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+                "Administrators", "FullControl", "ContainerInherit,ObjectInherit", "None", "Allow"
             )))
 
             $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-                $group, "Modify\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+                $group, "Modify", "ContainerInherit,ObjectInherit", "None", "Allow"
             )))
 
         Set-Acl -Path $path -AclObject $acl
