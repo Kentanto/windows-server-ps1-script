@@ -424,7 +424,7 @@ else {
     Log-Green "Share already exists: $WorkShare"
 }
 
-#try {
+try {
     # Try to create
     New-SmbShare -Name $LeadShare -Path $LeadPath -FullAccess "LeadTeam" -ErrorAction Stop
     Log-Green "Created share: $LeadShare"
