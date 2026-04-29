@@ -361,12 +361,12 @@ if (Confirm-Step "set up shared folders and permissions?") {
         Set-Acl -Path $path -AclObject $acl
         }
 
-        Set-CleanAcl $WorkPath \"Domain Users\"
-        Set-CleanAcl $LeadPath \"LeadTeam\"
+        Set-CleanAcl $WorkPath "Domain Users"
+        Set-CleanAcl $LeadPath "LeadTeam"
 
-        Log-Green \"NTFS permissions applied cleanly\"
+        Log-Green "NTFS permissions applied cleanly"
     } catch {
-        Log-Red \"NTFS setup failed: $_\"
+        Log-Red "NTFS setup failed: $_"
     }
 
 
@@ -384,11 +384,11 @@ if (Confirm-Step "set up shared folders and permissions?") {
         Log-Green "Share ready: $name"
     }
 
-    Ensure-Share \"Work\" $WorkPath \"Domain Users\"
-    Ensure-Share \"LeadTeam\" $LeadPath \"LeadTeam\"
+    Ensure-Share "Work" $WorkPath "Domain Users"
+    Ensure-Share "LeadTeam" $LeadPath "LeadTeam"
 
 
-    $gpoWork = \"DriveMap-Work\"
+    $gpoWork = "DriveMap-Work"
     New-GPO -Name $gpoWork | Out-Null
     Log-Green "Created GPO: $gpoWork"
 }
