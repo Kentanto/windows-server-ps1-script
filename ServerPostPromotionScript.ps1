@@ -560,7 +560,7 @@ try {
     Log-Green "Assigned logon script"
 }
 catch {
-    Log-Red "Failed to assign logon script"
+    Log-Red "Failed to assign logon script '$_'"
 }
 
 # ===== APPLY =====
