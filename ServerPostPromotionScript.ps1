@@ -1,4 +1,5 @@
-# ===== Function to confirm each stepwith user =====
+
+# ===== Function to confirm each step with user =====
 function Confirm-Step {
     param([string]$Message)
 
@@ -28,10 +29,12 @@ function Confirm-Step {
     }
 }
 
+$IP        = "192.168.5.45"
+$Prefix    = 24
+$Gateway   = "192.168.5.1"
+$DNS       = "192.168.5.1"
 
-
-
-# ==== SIMPLE LOGGING FUNCTION ====
+# ===== LOGGING =====
 function Log-Green {
     param([string]$msg)
     Write-Host "[OK] $msg" -ForegroundColor Green
@@ -43,32 +46,26 @@ function Log-Red {
 }
 
 # ===== MAIN IP Configuration =====
-
-$IP        = "192.168.5.45"
-$Prefix    = 24
-$Gateway   = "192.168.5.1"
-$DNS       = "192.168.5.1"
 if (Confirm-Step "Set static IP?") {
-$adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+    $adapter = Get-NetAdapter | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
 
-if (-not $adapter) {
-    Log-Red "No active network adapter found"
-    return
-}
+    if (-not $adapter) {
+        Log-Red "No active network adapter found"
+        return
+    }
 
-$ifIndex = $adapter.InterfaceIndex
-Log-Green "Using adapter: $($adapter.Name)"
+    $ifIndex = $adapter.InterfaceIndex
+    Log-Green "Using adapter: $($adapter.Name)"
 
+    try {
+        Set-NetIPInterface -InterfaceIndex $ifIndex -Dhcp Disabled -ErrorAction Stop
+        Log-Green "DHCP disabled"
+    } catch {
+        Log-Red "DHCP disable skipped or failed"
+    }
 
-try {
-    Set-NetIPInterface -InterfaceIndex $ifIndex -Dhcp Disabled -ErrorAction Stop
-    Log-Green "DHCP disabled"
-} catch {
-    Log-Red "DHCP disable skipped or failed"
-}
-
-Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-    ForEach-Object {
+    Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        ForEach-Object {
         try {
             Remove-NetIPAddress -InterfaceIndex $ifIndex -IPAddress $_.IPAddress -Confirm:$false -ErrorAction Stop
             Log-Green "Removed IP $($_.IPAddress)"
@@ -77,54 +74,54 @@ Get-NetIPAddress -InterfaceIndex $ifIndex -AddressFamily IPv4 -ErrorAction Silen
         }
     }
 
-Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        try {
-            Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction Stop
-            Log-Green "Removed existing gateway"
-        } catch {
-            Log-Red "Could not remove gateway"
+    Get-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            try {
+                Remove-NetRoute -InterfaceIndex $ifIndex -DestinationPrefix "0.0.0.0/0" -Confirm:$false -ErrorAction Stop
+                Log-Green "Removed existing gateway"
+            } catch {
+                Log-Red "Could not remove gateway"
+            }
         }
+
+        try {
+        New-NetIPAddress `
+            -InterfaceIndex $ifIndex `
+            -IPAddress $IP `
+            -PrefixLength $Prefix `
+            -DefaultGateway $Gateway `
+            -ErrorAction Stop
+
+        Log-Green "IP and gateway set"
+    } catch {
+        Log-Red "Failed to set IP"
     }
-try {
-    New-NetIPAddress `
-        -InterfaceIndex $ifIndex `
-        -IPAddress $IP `
-        -PrefixLength $Prefix `
-        -DefaultGateway $Gateway `
-        -ErrorAction Stop
 
-    Log-Green "IP and gateway set"
-} catch {
-    Log-Red "Failed to set IP"
+        try {
+        Set-DnsClientServerAddress `
+            -InterfaceIndex $ifIndex `
+            -ServerAddresses $DNS `
+            -ErrorAction Stop
+
+        Log-Green "DNS set to $DNS"
+    } catch {
+        Log-Red "Failed to set DNS"
+    }
+} else {
+    Log-Green "Skipping IP configuration"
 }
-try {
-    Set-DnsClientServerAddress `
-        -InterfaceIndex $ifIndex `
-        -ServerAddresses $DNS `
-        -ErrorAction Stop
-
-    Log-Green "DNS set to $DNS"
-} catch {
-    Log-Red "Failed to set DNS"
-}}
-else {
-    Log-Green "Skipping IP configuration"}
 
 if (Confirm-Step "Configure DHCP?") {
+    $ScopeName = "LAN Scope"
+    $ScopeID   = "192.168.5.0"
+    $StartIP   = "192.168.5.150"
+    $EndIP     = "192.168.5.200"
+    $Subnet    = "255.255.255.0"
+    $Gateway   = "192.168.5.1"
+    $DNS       = "127.0.0.1"
+    $LeaseTime = "2.00:00:00"
 
-
-
-$ScopeName = "LAN Scope"
-$ScopeID   = "192.168.5.0"
-$StartIP   = "192.168.5.150"
-$EndIP     = "192.168.5.200"
-$Subnet    = "255.255.255.0"
-$Gateway   = "192.168.5.1"
-$DNS       = "127.0.0.1"
-$LeaseTime = "2.00:00:00"
-
-try {
+    try {
     try {
     Restart-Service DHCPServer -Force
     Log-Green "DHCP service restarted to apply DNS settings"
@@ -154,7 +151,7 @@ try {
         Log-Red "Failed to authorize DHCP: $_"
     }
 
-    start-sleep -Seconds 5
+        Start-Sleep -Seconds 5
 
     $existing = Get-DhcpServerv4Scope -ScopeId $ScopeID -ErrorAction SilentlyContinue
 
@@ -174,12 +171,14 @@ try {
         Log-Green "DHCP scope created"
     }
 
+    # Set gateway option (Router = 003)
     Set-DhcpServerv4OptionValue `
         -ScopeId $ScopeID `
         -Router $Gateway
 
     Log-Green "Gateway set"
 
+    # Set DNS option (006)
     Set-DhcpServerv4OptionValue `
         -ScopeId $ScopeID `
         -DnsServer $DNS
@@ -192,70 +191,66 @@ catch {
     Log-Red "DHCP setup failed: $_"
 }
 
-} 
-# ===== GPO AND OU / USER CONFIGURATION =====
+}
 
+# ===== GPO and ou/user Configuration =====
 if (Confirm-Step "Add OU, users, groups, and GPOs?") {
+    Import-Module ActiveDirectory
+    Import-Module GroupPolicy
 
-Import-Module ActiveDirectory
-Import-Module GroupPolicy
-
-$RootOU = "Lab"
+    $RootOU = "Lab"
 
 $ChildOUs = @(
-    "Users",
-    "Admins",
-    "Computers",
-    "LeadTeam",
-    "IT"
-)
+        "Users",
+        "Admins",
+        "Computers",
+        "LeadTeam",
+        "IT"
+    )
 
-$Domain   = Get-ADDomain
-$DomainDN = $Domain.DistinguishedName
-$rootPath = "OU=$RootOU,$DomainDN"
+    $Domain = Get-ADDomain
+    $DomainDN = $Domain.DistinguishedName
+    $rootPath = "OU=$RootOU,$DomainDN"
 
-if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$RootOU'" -ErrorAction SilentlyContinue)) {
-    New-ADOrganizationalUnit -Name $RootOU -Path $DomainDN
-    Log-Green "Created root OU"
-}
-
-foreach ($ou in $ChildOUs) {
-    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ou'" -SearchBase $rootPath -ErrorAction SilentlyContinue)) {
-        New-ADOrganizationalUnit -Name $ou -Path $rootPath
-        Log-Green "Created OU: $ou"
+    if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$RootOU'" -ErrorAction SilentlyContinue)) {
+        New-ADOrganizationalUnit -Name $RootOU -Path $DomainDN
+        Log-Green "Created root OU"
     }
-}
 
-$GroupName = "LeadTeam"
-
-if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
-    New-ADGroup -Name $GroupName -GroupScope Global -Path $DomainDN
-    Log-Green "Created group: $GroupName"
-}
-
-function Create-User {
-    param($Name, $OU)
-
-    $userPath = "OU=$OU,$rootPath"
-
-    if (-not (Get-ADUser -Filter "SamAccountName -eq '$Name'" -ErrorAction SilentlyContinue)) {
-
-        $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
-
-        New-ADUser `
-            -Name $Name `
-            -SamAccountName $Name `
-            -UserPrincipalName "$Name@$($Domain.DNSRoot)" `
-            -Path $userPath `
-            -AccountPassword $password `
-            -Enabled $true
-
-        Set-ADUser -Identity $Name -ChangePasswordAtLogon $true
-
-        Log-Green "Created user: $Name in $OU"
+    foreach ($ou in $ChildOUs) {
+        if (-not (Get-ADOrganizationalUnit -Filter "Name -eq '$ou'" -SearchBase $rootPath -ErrorAction SilentlyContinue)) {
+            New-ADOrganizationalUnit -Name $ou -Path $rootPath
+            Log-Green "Created OU: $ou"
+        }
     }
-}
 
+    $GroupName = "LeadTeam"
+
+    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
+        New-ADGroup -Name $GroupName -GroupScope Global -Path $DomainDN
+        Log-Green "Created group: $GroupName"
+    }
+
+    function Create-User {
+        param($Name, $OU)
+
+        $userPath = "OU=$OU,$rootPath"
+
+        if (-not (Get-ADUser -Filter "SamAccountName -eq '$Name'" -ErrorAction SilentlyContinue)) {
+            $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
+            New-ADUser `
+                -Name $Name `
+                -SamAccountName $Name `
+                -UserPrincipalName "$Name@$($Domain.DNSRoot)" `
+                -Path $userPath `
+                -AccountPassword $password `
+                -Enabled $true
+
+            Set-ADUser -Identity $Name -ChangePasswordAtLogon $true
+
+            Log-Green "Created user: $Name in $OU"
+        }
+    }
 Create-User "Hans" "LeadTeam"
 Create-User "Live" "LeadTeam"
 Create-User "Kine" "IT"
@@ -263,211 +258,229 @@ Create-User "Kine" "IT"
 Add-ADGroupMember -Identity "LeadTeam" -Members "Hans","Live" -ErrorAction SilentlyContinue
 Log-Green "Added Hans and Live to LeadTeam group"
 
-# ===== ADMIN FIX =====
-try {
+    try {
     Set-ADUser -Identity "Administrator" -PasswordNeverExpires $false
+        Log-Green "Disabled 'password never expires' for Administrator"
 
-    $tempPass = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
+        $tempPass = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
 
-    Set-ADAccountPassword -Identity "Administrator" -NewPassword $tempPass -Reset
-    Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
+        Set-ADAccountPassword `
+            -Identity "Administrator" `
+            -NewPassword $tempPass `
+            -Reset
 
-    Log-Green "Administrator password reset + forced change"
-}
-catch {
-    Log-Red "Failed Administrator fix: $_"
-}
+        Log-Green "Administrator password reset"
 
-# ===== OU GPOS =====
-foreach ($ou in $ChildOUs) {
+        Set-ADUser -Identity "Administrator" -ChangePasswordAtLogon $true
 
-    $gpoName = "$ou-GPO"
-
-    if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
-
-        New-GPO -Name $gpoName | Out-Null
-        Log-Green "Created GPO: $gpoName"
-
-        New-GPLink -Name $gpoName -Target "OU=$ou,$rootPath" -LinkEnabled Yes
-        Log-Green "Linked GPO: $gpoName to $ou"
+        Log-Green "Administrator will change password at next logon"
+    } catch {
+        Log-Red "Failed Administrator fix: $_"
     }
+
+    foreach ($ou in $ChildOUs) {
+        $gpoName = "$ou-GPO"
+
+        if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
+            New-GPO -Name $gpoName | Out-Null
+            Log-Green "Created GPO: $gpoName"
+
+            New-GPLink `
+                -Name $gpoName `
+                -Target "OU=$ou,$rootPath" `
+                -LinkEnabled Yes
+
+            Log-Green "Linked GPO to OU: $ou"
+        }
+    }
+
+    try {
+        Set-GPRegistryValue `
+            -Name "Default Domain Policy" `
+            -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
+            -ValueName "DisableCAD" `
+            -Type DWord `
+            -Value 1
+
+        Log-Green "Disabled CTRL+ALT+DEL"
+    } catch {
+        Log-Red "Failed to update Default Domain Policy: $_"
+    }
+
+    try {
+        Set-ADDefaultDomainPasswordPolicy `
+            -Identity $Domain.DistinguishedName `
+            -MinPasswordLength 0 `
+            -ComplexityEnabled $false `
+            -PasswordHistoryCount 0 `
+            -MaxPasswordAge (New-TimeSpan -Days 3650)
+
+        Log-Green "Updated Default Domain Password Policy"
+    } catch {
+        Log-Red "Failed to update domain password policy '$_'"
+    }
+
+    gpupdate /force
+    Log-Green "Configuration complete"
 }
-
-# ===== DEFAULT DOMAIN POLICY TWEAK =====
-try {
-    Set-GPRegistryValue `
-        -Name "Default Domain Policy" `
-        -Key "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
-        -ValueName "DisableCAD" `
-        -Type DWord `
-        -Value 1
-
-    Log-Green "Disabled CTRL+ALT+DEL"
-}
-catch {
-    Log-Red "Failed Default Domain Policy update: $_"
-}
-
-# ===== PASSWORD POLICY =====
-try {
-    Set-ADDefaultDomainPasswordPolicy `
-        -Identity $Domain.DistinguishedName `
-        -MinPasswordLength 0 `
-        -ComplexityEnabled $false `
-        -PasswordHistoryCount 0 `
-        -MaxPasswordAge (New-TimeSpan -Days 3650)
-
-    Log-Green "Updated password policy"
-}
-catch {
-    Log-Red "Password policy failed: $_"
-}
-
-gpupdate /force
-Log-Green "AD setup complete"
-}
-
-# ===== SHARED FOLDERS + DRIVE MAPPING (CLEAN FINAL VERSION) =====
-
+# ===== SHARED FOLDERS =====
 if (Confirm-Step "set up shared folders and permissions?") {
+    $BasePath = "D:\Shares"
+    $WorkPath = "$BasePath\Work"
+    $LeadPath = "$BasePath\LeadTeam"
+    $Server   = $env:COMPUTERNAME
+    $Domain   = Get-ADDomain
+    $DomainDN = $Domain.DistinguishedName
 
-$BasePath = "D:\Shares"
-$WorkPath = "$BasePath\Work"
-$LeadPath = "$BasePath\LeadTeam"
-
-$Domain = Get-ADDomain
-$Server = $Domain.DNSRoot
-$DomainDN = $Domain.DistinguishedName
-
-foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
-    if (-not (Test-Path $path)) {
-        New-Item -ItemType Directory -Path $path -Force | Out-Null
-        Log-Green "Created folder: $path"
-    }
-}
-
-# ===== NTFS =====
-function Set-CleanAcl($path, $group) {
-    $acl = New-Object System.Security.AccessControl.DirectorySecurity
-    $acl.SetAccessRuleProtection($true, $false)
-
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-        "SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow"
-    )))
-
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-        "Administrators","FullControl","ContainerInherit,ObjectInherit","None","Allow"
-    )))
-
-    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
-        $group,"Modify","ContainerInherit,ObjectInherit","None","Allow"
-    )))
-
-    Set-Acl -Path $path -AclObject $acl
-}
-
-Set-CleanAcl $WorkPath "Domain Users"
-Set-CleanAcl $LeadPath "LeadTeam"
-
-Log-Green "NTFS set"
-
-# ===== SMB SHARES =====
-function Ensure-Share($name, $path, $group) {
-
-    if (Get-SmbShare -Name $name -ErrorAction SilentlyContinue) {
-        Remove-SmbShare -Name $name -Force -Confirm:$false
+    foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
+        if (-not (Test-Path $path)) {
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+            Log-Green "Created folder: $path"
+        } else {
+            Log-Green "Folder already exists: $path"
+        }
     }
 
-    New-SmbShare -Name $name -Path $path -FullAccess "Administrators" -ChangeAccess $group | Out-Null
-    Set-SmbShare -Name $name -FolderEnumerationMode AccessBased -Force
+    try {
+        function Set-CleanAcl($path, $group) {
+            $acl = New-Object System.Security.AccessControl.DirectorySecurity
+            $acl.SetAccessRuleProtection($true, $false)
 
-    Log-Green "Share ready: $name"
-}
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "SYSTEM\", "FullControl\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+            )))
 
-Ensure-Share "Work" $WorkPath "Domain Users"
-Ensure-Share "LeadTeam" $LeadPath "LeadTeam"
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                "Administrators\", "FullControl\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+            )))
 
-# ===== CLEAN GPO DRIVE MAPPING (ONLY METHOD USED) =====
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                $group, "Modify\", "ContainerInherit,ObjectInherit\", "None\", "Allow\"
+            )))
 
-function Add-DriveGPO($name, $letter, $share, $ou) {
+        Set-Acl -Path $path -AclObject $acl
+        }
 
-    if (-not (Get-GPO -Name $name -ErrorAction SilentlyContinue)) {
-        New-GPO -Name $name | Out-Null
+        Set-CleanAcl $WorkPath \"Domain Users\"
+        Set-CleanAcl $LeadPath \"LeadTeam\"
+
+        Log-Green \"NTFS permissions applied cleanly\"
+    } catch {
+        Log-Red \"NTFS setup failed: $_\"
     }
 
-    if ((Get-GPInheritance -Target $ou).GpoLinks.DisplayName -notcontains $name) {
-        New-GPLink -Name $name -Target $ou -LinkEnabled Yes
+
+    function Ensure-Share($name, $path, $group) {
+        $existing = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
+
+        if ($existing) {
+            Remove-SmbShare -Name $name -Force -Confirm:$false
+            Start-Sleep -Milliseconds 500
+        }
+
+        New-SmbShare -Name $name -Path $path -FullAccess "Administrators" -ChangeAccess $group | Out-Null
+        Set-SmbShare -Name $name -FolderEnumerationMode AccessBased -Force
+
+        Log-Green "Share ready: $name"
     }
 
-    $gpo = Get-GPO $name
+    Ensure-Share \"Work\" $WorkPath \"Domain Users\"
+    Ensure-Share \"LeadTeam\" $LeadPath \"LeadTeam\"
 
-    $xml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<DriveMaps>
-    <Drive>
-        <Properties action="U" driveLetter="$letter" path="\\$Server\$share" persistent="0" />
-    </Drive>
-</DriveMaps>
-"@
 
-    $path = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$($gpo.Id)}\User\Preferences\Drives"
-
-    New-Item -ItemType Directory -Path $path -Force | Out-Null
-    $xml | Out-File "$path\Drives.xml" -Encoding UTF8
-
-    Log-Green "Mapped $share -> $letter"
+    $gpoWork = \"DriveMap-Work\"
+    New-GPO -Name $gpoWork | Out-Null
+    Log-Green "Created GPO: $gpoWork"
 }
 
-Add-DriveGPO "DriveMap-Work" "W:" "Work" "OU=Lab,$DomainDN"
-Add-DriveGPO "DriveMap-LeadTeam" "L:" "LeadTeam" "OU=LeadTeam,OU=Lab,$DomainDN"
-
-gpupdate /force
-Log-Green "Shares + drives complete"
-}
-
-# ===== CREATE AND APPLY LOGON SCRIPT=====
-
-# ===== ASSIGN LOGON SCRIPT VIA GPO =====
-
-$gpoScript = "LogonScript-DriveMap"
-
-if (-not (Get-GPO -Name $gpoScript -ErrorAction SilentlyContinue)) {
-    New-GPO -Name $gpoScript | Out-Null
-    Log-Green "Created GPO: $gpoScript"
-}
-
-# Link to Lab OU (all users)
 $targetOU = "OU=Lab,$DomainDN"
 
-if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoScript) {
-    New-GPLink -Name $gpoScript -Target $targetOU -LinkEnabled Yes | Out-Null
-    Log-Green "Linked logon script GPO"
+if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoWork) {
+    New-GPLink -Name $gpoWork -Target $targetOU -LinkEnabled Yes | Out-Null
 }
 
-# Get GPO path
-$gpoId = (Get-GPO $gpoScript).Id
-$scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\User\Scripts\Logon"
+$gpoIdWork = (Get-GPO $gpoWork).Id
+$gpoPathWork = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdWork}\User\Preferences\Drives"
 
-# Create folder if missing
-New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
-
-# Copy script into GPO folder
-Copy-Item $ScriptPath "$scriptFolder\$ScriptName" -Force
-
-# Create scripts.ini (THIS IS CRITICAL)
-$iniPath = "$scriptFolder\scripts.ini"
+New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
 
 @"
-[Logon]
-0CmdLine=$ScriptName
-0Parameters=
-"@ | Out-File $iniPath -Encoding ASCII
+<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
+    <Drive name="Work Drive" status="Enabled">
+        <Properties action="U" letter="W" path="\\$Server\Work" />
+    </Drive>
+</Drives>
+"@ | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
 
-Log-Green "Logon script assigned via GPO"
+Log-Green "Work drive mapped"
 
-Set-GPRegistryValue `
-    -Name $gpoScript `
-    -Key "HKLM\Software\Policies\Microsoft\Windows NT\CurrentVersion\Winlogon" `
-    -ValueName "SyncForegroundPolicy" `
-    -Type DWord `
-    -Value 1
+$gpoLead = "DriveMap-LeadTeam"
+
+if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $gpoLead | Out-Null
+}
+
+$leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
+
+if ((Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName -notcontains $gpoLead) {
+    New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
+}
+
+$gpoIdLead = (Get-GPO $gpoLead).Id
+    $gpoPathLead = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdLead}\User\Preferences\Drives"
+
+    New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
+
+    @"
+<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
+    <Drive name="LeadTeam Drive" status="Enabled">
+        <Properties action="U" letter="L" path="\\$Server\LeadTeam" />
+    </Drive>
+</Drives>
+"@ | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
+
+    Log-Green "LeadTeam drive mapped"
+
+    gpupdate /force
+    Log-Green "Done - log off and log back in"
+
+# ===== AUTO DRIVE MAPPING (WORKING METHOD) =====
+if (Confirm-Step "configure automatic drive mapping?") {
+    $Domain = Get-ADDomain
+    $DomainName = $Domain.DNSRoot
+    $Server = $env:COMPUTERNAME
+
+    $ScriptName = "map-drives.bat"
+    $ScriptPath = "\\$DomainName\NETLOGON\$ScriptName"
+
+    if (-not (Test-Path $ScriptPath)) {
+        $ScriptContent = @"
+net use W: /delete /yes >nul 2>&1
+net use W: \\$Server\Work /persistent:no
+
+net use L: /delete /yes >nul 2>&1
+net use L: \\$Server\LeadTeam /persistent:no
+"@
+
+        $ScriptContent | Out-File $ScriptPath -Encoding ASCII
+        Log-Green "Created logon script in NETLOGON"
+    } else {
+        Log-Green "Logon script already exists"
+    }
+
+    $Users = @("Hans", "Live", "Kine")
+
+    foreach ($user in $Users) {
+        try {
+            Set-ADUser -Identity $user -ScriptPath $ScriptName
+            Log-Green "Assigned script to $user"
+        } catch {
+            Log-Red "Failed to assign script to $user"
+        }
+    }
+
+    gpupdate /force
+    Log-Green "Done - LOG OFF and log back in as user"
+}
+
+# ===== FINISHED :D =====
