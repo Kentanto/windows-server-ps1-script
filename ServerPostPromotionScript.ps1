@@ -482,3 +482,5 @@ net use L: \\$Server\LeadTeam /persistent:no
     gpupdate /force
     Log-Green "Done - LOG OFF and log back in as user"
 }
+
+# ===== FINISHED :D =====
