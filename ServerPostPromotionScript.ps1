@@ -358,8 +358,121 @@ catch {
     Log-Red "Failed to update domain password policy '$_'"
 }
 
-# ===== APPLY GPO =====
+
 gpupdate /force
 
 Log-Green "Configuration complete"
+}
+
+# ===== SHARED FOLDERS =====
+
+if (Confirm-Step "set up shared folders and permissions?") {
+    # ===== SHARED FOLDERS + AUTO MAPPING =====
+
+$BasePath = "C:\Shares"
+$WorkPath = "$BasePath\Work"
+$LeadPath = "$BasePath\LeadTeam"
+$Server   = $env:COMPUTERNAME
+$DomainDN = (Get-ADDomain).DistinguishedName
+
+# ===== CREATE FOLDERS (SAFE) =====
+foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
+    if (-not (Test-Path $path)) {
+        New-Item -ItemType Directory -Path $path | Out-Null
+        Log-Green "Created folder: $path"
+    } else {
+        Log-Green "Folder already exists: $path"
+    }
+}
+
+# ===== NTFS PERMISSIONS =====
+try {
+    # Work (everyone)
+    icacls $WorkPath /inheritance:r | Out-Null
+    icacls $WorkPath /grant "Domain Users:(OI)(CI)M" | Out-Null
+
+    # LeadTeam (restricted)
+    icacls $LeadPath /inheritance:r | Out-Null
+    icacls $LeadPath /grant "LeadTeam:(OI)(CI)M" | Out-Null
+
+    Log-Green "NTFS permissions applied"
+}
+catch {
+    Log-Red "Failed NTFS permissions"
+}
+
+# ===== SMB SHARES (SAFE) =====
+
+# Work share
+if (-not (Get-SmbShare -Name "Work" -ErrorAction SilentlyContinue)) {
+    New-SmbShare -Name "Work" -Path $WorkPath -FullAccess "Domain Users" | Out-Null
+    Log-Green "Created share: Work"
+} else {
+    Log-Green "Share already exists: Work"
+}
+
+# LeadTeam share
+if (-not (Get-SmbShare -Name "LeadTeam" -ErrorAction SilentlyContinue)) {
+    New-SmbShare -Name "LeadTeam" -Path $LeadPath -FullAccess "LeadTeam" | Out-Null
+    Log-Green "Created share: LeadTeam"
+} else {
+    Log-Green "Share already exists: LeadTeam"
+}
+Set-SmbShare -Name "LeadTeam" -FolderEnumerationMode AccessBased
+# ===== GPO: WORK DRIVE (ALL USERS) =====
+
+$gpoWork = "DriveMap-Work"
+
+if (-not (Get-GPO -Name $gpoWork -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $gpoWork | Out-Null
+    Log-Green "Created GPO: $gpoWork"
+}
+
+# Link if not already linked
+$gpoLinks = (Get-GPInheritance -Target "OU=Lab,$DomainDN").GpoLinks.DisplayName
+if ($gpoLinks -notcontains $gpoWork) {
+    New-GPLink -Name $gpoWork -Target "OU=Lab,$DomainDN" -LinkEnabled Yes | Out-Null
+    Log-Green "Linked $gpoWork to Lab OU"
+}
+
+# Set drive mapping
+Set-GPRegistryValue `
+    -Name $gpoWork `
+    -Key "HKCU\Network\W" `
+    -ValueName "RemotePath" `
+    -Type String `
+    -Value "\\$Server\Work"
+
+# ===== GPO: LEADTEAM DRIVE (RESTRICTED) =====
+
+$gpoLead = "DriveMap-LeadTeam"
+
+if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $gpoLead | Out-Null
+    Log-Green "Created GPO: $gpoLead"
+}
+
+# Link only to LeadTeam OU
+$leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
+$gpoLinksLead = (Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName
+
+if ($gpoLinksLead -notcontains $gpoLead) {
+    New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
+    Log-Green "Linked $gpoLead to LeadTeam OU"
+}
+
+# Set drive mapping
+Set-GPRegistryValue `
+    -Name $gpoLead `
+    -Key "HKCU\Network\L" `
+    -ValueName "RemotePath" `
+    -Type String `
+    -Value "\\$Server\LeadTeam"
+
+Log-Green "Drive mappings configured"
+
+# ===== APPLY =====
+gpupdate /force
+
+Log-Green "Done"
 }
