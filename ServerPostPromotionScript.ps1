@@ -402,25 +402,63 @@ catch {
     Log-Red "Failed NTFS permissions"
 }
 
-# ===== SMB SHARES (SAFE) =====
+# ===== SMB SHARES (FIXED SAFE VERSION) =====
 
-if (-not (Get-SmbShare -Name "Work" -ErrorAction SilentlyContinue)) {
-    New-SmbShare -Name "Work" -Path $WorkPath -FullAccess "Domain Users" | Out-Null
-    Log-Green "Created share: Work"
-} else {
-    Log-Green "Share already exists: Work"
+# Normalize names
+$WorkShare = "Work"
+$LeadShare = "LeadTeam"
+
+# ===== WORK SHARE =====
+$existingWork = Get-SmbShare -Name $WorkShare -ErrorAction SilentlyContinue
+
+if (-not $existingWork) {
+    try {
+        New-SmbShare -Name $WorkShare -Path $WorkPath -FullAccess "Domain Users" -ErrorAction Stop
+        Log-Green "Created share: $WorkShare"
+    }
+    catch {
+        Log-Red "Failed to create Work share: $_"
+    }
+}
+else {
+    Log-Green "Share already exists: $WorkShare"
 }
 
-if (-not (Get-SmbShare -Name "LeadTeam" -ErrorAction SilentlyContinue)) {
-    New-SmbShare -Name "LeadTeam" -Path $LeadPath -FullAccess "LeadTeam" | Out-Null
-    Log-Green "Created share: LeadTeam"
-} else {
-    Log-Green "Share already exists: LeadTeam"
+# ===== LEAD SHARE =====
+$existingLead = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
+
+if (-not $existingLead) {
+    try {
+        New-SmbShare -Name $LeadShare -Path $LeadPath -FullAccess "LeadTeam" -ErrorAction Stop
+        Log-Green "Created share: $LeadShare"
+        
+        # small delay to avoid race condition
+        Start-Sleep -Milliseconds 500
+    }
+    catch {
+        Log-Red "Failed to create LeadTeam share: $_"
+    }
+}
+else {
+    Log-Green "Share already exists: $LeadShare"
 }
 
+# ===== SAFE POST-CONFIG (ONLY IF EXISTS) =====
 
-Set-SmbShare -Name "LeadTeam" -FolderEnumerationMode AccessBased
+$leadShareCheck = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
 
+if ($leadShareCheck) {
+    try {
+        Set-SmbShare -Name $LeadShare -FolderEnumerationMode AccessBased -ErrorAction Stop
+        Log-Green "Configured LeadTeam share visibility"
+    }
+    catch {
+        Log-Red "Failed to configure LeadTeam share: $_"
+    }
+}
+else {
+    Log-Red "LeadTeam share not found for configuration step"
+}
 # ===== GPO: WORK DRIVE =====
 
 $gpoWork = "DriveMap-Work"
