@@ -379,102 +379,64 @@ $DomainDN = $Domain.DistinguishedName
 # ===== CREATE FOLDERS (SAFE) =====
 foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
     if (-not (Test-Path $path)) {
-        New-Item -ItemType Directory -Path $path | Out-Null
+        New-Item -ItemType Directory -Path $path -Force | Out-Null
         Log-Green "Created folder: $path"
-    } else {
+    }
+    else {
         Log-Green "Folder already exists: $path"
     }
 }
 
-# ===== NTFS PERMISSIONS =====
+# ===== NTFS PERMISSIONS (CLEAN BASELINE) =====
 try {
-    # Work (everyone)
-    icacls $WorkPath /inheritance:r | Out-Null
-    icacls $WorkPath /grant "Domain Users:(OI)(CI)M" | Out-Null
+    function Set-CleanAcl($path, $group) {
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
 
-    # LeadTeam (restricted)
-    icacls $LeadPath /inheritance:r | Out-Null
-    icacls $LeadPath /grant "LeadTeam:(OI)(CI)M" | Out-Null
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "SYSTEM","FullControl","ContainerInherit,ObjectInherit","None","Allow"
+        )))
 
-    Log-Green "NTFS permissions applied"
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            "Administrators","FullControl","ContainerInherit,ObjectInherit","None","Allow"
+        )))
+
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $group,"Modify","ContainerInherit,ObjectInherit","None","Allow"
+        )))
+
+        Set-Acl -Path $path -AclObject $acl
+    }
+
+    Set-CleanAcl $WorkPath "Domain Users"
+    Set-CleanAcl $LeadPath "LeadTeam"
+
+    Log-Green "NTFS permissions applied cleanly"
 }
 catch {
-    Log-Red "Failed NTFS permissions"
+    Log-Red "NTFS setup failed: $_"
 }
 
-# ===== SMB SHARES (FIXED SAFE VERSION) =====
+# ===== SMB SHARE CREATION (IDEMPOTENT SAFE) =====
+function Ensure-Share($name, $path, $group) {
 
-# Normalize names
-$WorkShare = "Work"
-$LeadShare = "LeadTeam"
+    $existing = Get-SmbShare -Name $name -ErrorAction SilentlyContinue
 
-# ===== WORK SHARE =====
-$existingWork = Get-SmbShare -Name $WorkShare -ErrorAction SilentlyContinue
-
-if (-not $existingWork) {
-    try {
-        New-SmbShare -Name $WorkShare -Path $WorkPath -FullAccess "Domain Users" -ErrorAction Stop
-        Log-Green "Created share: $WorkShare"
+    if ($existing) {
+        Remove-SmbShare -Name $name -Force -Confirm:$false
+        Start-Sleep -Milliseconds 500
     }
-    catch {
-        Log-Red "Failed to create Work share: $_"
-    }
-}
-else {
-    Log-Green "Share already exists: $WorkShare"
+
+    New-SmbShare -Name $name -Path $path -FullAccess "Administrators" -ChangeAccess $group | Out-Null
+    Set-SmbShare -Name $name -FolderEnumerationMode AccessBased -Force
+
+    Log-Green "Share ready: $name"
 }
 
-try {
-    # Try to create
-    New-SmbShare -Name $LeadShare -Path $LeadPath -FullAccess "LeadTeam" -ErrorAction Stop
-    Log-Green "Created share: $LeadShare"
-}
-catch {
-    if ($_.Exception.Message -match "already|exists") {
-        Log-Green "Share already exists: $LeadShare"
-    }
-    else {
-        Log-Red "Failed to create share (real error): $_"
-    }
-}
+Ensure-Share "Work" $WorkPath "Domain Users"
+Ensure-Share "LeadTeam" $LeadPath "LeadTeam"
 
-# Wait for SMB provider to register (important on DCs)
-Start-Sleep -Seconds 1
-
-# Now safely configure (only if it exists)
-$share = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
-
-if ($share) {
-    try {
-        Set-SmbShare -Name $LeadShare -FolderEnumerationMode AccessBased -ErrorAction Stop
-        Log-Green "Configured LeadTeam share"
-    }
-    catch {
-        Log-Red "Failed to configure LeadTeam share: $_"
-    }
-}
-else {
-    Log-Red "LeadTeam share still not visible in SMB after creation"
-}
-
-# ===== SAFE POST-CONFIG (ONLY IF EXISTS) =====
-
-$leadShareCheck = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
-
-if ($leadShareCheck) {
-    try {
-        Set-SmbShare -Name $LeadShare -FolderEnumerationMode AccessBased -ErrorAction Stop
-        Log-Green "Configured LeadTeam share visibility"
-    }
-    catch {
-        Log-Red "Failed to configure LeadTeam share: $_"
-    }
-}
-else {
-    Log-Red "LeadTeam share not found for configuration step"
-}
 # ===== GPO: WORK DRIVE =====
-
 $gpoWork = "DriveMap-Work"
 
 if (-not (Get-GPO -Name $gpoWork -ErrorAction SilentlyContinue)) {
@@ -486,66 +448,55 @@ $targetOU = "OU=Lab,$DomainDN"
 
 if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoWork) {
     New-GPLink -Name $gpoWork -Target $targetOU -LinkEnabled Yes | Out-Null
-    Log-Green "Linked $gpoWork"
 }
 
-# Create Drive Maps XML (WORK)
+# ===== WORK DRIVE XML =====
 $gpoIdWork = (Get-GPO $gpoWork).Id
 $gpoPathWork = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdWork}\User\Preferences\Drives"
 
-if (-not (Test-Path $gpoPathWork)) {
-    New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
-}
+New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
 
-$xmlWork = @"
+@"
 <Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
     <Drive name="Work Drive" status="Enabled">
         <Properties action="U" letter="W" path="\\$Server\Work" />
     </Drive>
 </Drives>
-"@
+"@ | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
 
-$xmlWork | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
-Log-Green "Configured Work drive mapping"
+Log-Green "Work drive mapped"
 
 # ===== GPO: LEADTEAM DRIVE =====
-
 $gpoLead = "DriveMap-LeadTeam"
 
 if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
     New-GPO -Name $gpoLead | Out-Null
-    Log-Green "Created GPO: $gpoLead"
 }
 
 $leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
 
 if ((Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName -notcontains $gpoLead) {
     New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
-    Log-Green "Linked $gpoLead"
 }
 
-# Create Drive Maps XML (LEADTEAM)
+# ===== LEAD DRIVE XML =====
 $gpoIdLead = (Get-GPO $gpoLead).Id
 $gpoPathLead = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdLead}\User\Preferences\Drives"
 
-if (-not (Test-Path $gpoPathLead)) {
-    New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
-}
+New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
 
-$xmlLead = @"
+@"
 <Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
     <Drive name="LeadTeam Drive" status="Enabled">
         <Properties action="U" letter="L" path="\\$Server\LeadTeam" />
     </Drive>
 </Drives>
-"@
+"@ | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
 
-$xmlLead | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
-Log-Green "Configured LeadTeam drive mapping"
+Log-Green "LeadTeam drive mapped"
 
 gpupdate /force
-
-Log-Green "Done - log off and log back in to see mapped drives"
+Log-Green "Done - log off and log back in"
 }
 
 # ===== AUTO DRIVE MAPPING (WORKING METHOD) =====
