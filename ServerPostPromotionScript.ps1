@@ -424,23 +424,37 @@ else {
     Log-Green "Share already exists: $WorkShare"
 }
 
-# ===== LEAD SHARE =====
-$existingLead = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
+#try {
+    # Try to create
+    New-SmbShare -Name $LeadShare -Path $LeadPath -FullAccess "LeadTeam" -ErrorAction Stop
+    Log-Green "Created share: $LeadShare"
+}
+catch {
+    if ($_.Exception.Message -match "already|exists") {
+        Log-Green "Share already exists: $LeadShare"
+    }
+    else {
+        Log-Red "Failed to create share (real error): $_"
+    }
+}
 
-if (-not $existingLead) {
+# Wait for SMB provider to register (important on DCs)
+Start-Sleep -Seconds 1
+
+# Now safely configure (only if it exists)
+$share = Get-SmbShare -Name $LeadShare -ErrorAction SilentlyContinue
+
+if ($share) {
     try {
-        New-SmbShare -Name $LeadShare -Path $LeadPath -FullAccess "LeadTeam" -ErrorAction Stop
-        Log-Green "Created share: $LeadShare"
-        
-        # small delay to avoid race condition
-        Start-Sleep -Milliseconds 500
+        Set-SmbShare -Name $LeadShare -FolderEnumerationMode AccessBased -ErrorAction Stop
+        Log-Green "Configured LeadTeam share"
     }
     catch {
-        Log-Red "Failed to create LeadTeam share: $_"
+        Log-Red "Failed to configure LeadTeam share: $_"
     }
 }
 else {
-    Log-Green "Share already exists: $LeadShare"
+    Log-Red "LeadTeam share still not visible in SMB after creation"
 }
 
 # ===== SAFE POST-CONFIG (ONLY IF EXISTS) =====
