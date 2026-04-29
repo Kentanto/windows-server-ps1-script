@@ -424,3 +424,50 @@ Add-DriveGPO "DriveMap-LeadTeam" "L:" "LeadTeam" "OU=LeadTeam,OU=Lab,$DomainDN"
 gpupdate /force
 Log-Green "Shares + drives complete"
 }
+
+# ===== CREATE AND APPLY LOGON SCRIPT=====
+
+# ===== ASSIGN LOGON SCRIPT VIA GPO =====
+
+$gpoScript = "LogonScript-DriveMap"
+
+if (-not (Get-GPO -Name $gpoScript -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $gpoScript | Out-Null
+    Log-Green "Created GPO: $gpoScript"
+}
+
+# Link to Lab OU (all users)
+$targetOU = "OU=Lab,$DomainDN"
+
+if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoScript) {
+    New-GPLink -Name $gpoScript -Target $targetOU -LinkEnabled Yes | Out-Null
+    Log-Green "Linked logon script GPO"
+}
+
+# Get GPO path
+$gpoId = (Get-GPO $gpoScript).Id
+$scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\User\Scripts\Logon"
+
+# Create folder if missing
+New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
+
+# Copy script into GPO folder
+Copy-Item $ScriptPath "$scriptFolder\$ScriptName" -Force
+
+# Create scripts.ini (THIS IS CRITICAL)
+$iniPath = "$scriptFolder\scripts.ini"
+
+@"
+[Logon]
+0CmdLine=$ScriptName
+0Parameters=
+"@ | Out-File $iniPath -Encoding ASCII
+
+Log-Green "Logon script assigned via GPO"
+
+Set-GPRegistryValue `
+    -Name $gpoScript `
+    -Key "HKLM\Software\Policies\Microsoft\Windows NT\CurrentVersion\Winlogon" `
+    -ValueName "SyncForegroundPolicy" `
+    -Type DWord `
+    -Value 1
