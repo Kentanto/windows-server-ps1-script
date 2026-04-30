@@ -536,6 +536,7 @@ function Get-Installer {
         }
         catch {
             Log-Red "Failed to download: $Url"
+            log-red "Error: $_"
         }
     }
     else {
@@ -545,8 +546,8 @@ function Get-Installer {
 
 # Notepad++
 Get-Installer `
-    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.6.6.Installer.x64.exe" `
-    -OutFile "$SoftwarePath\notepadpp.exe"
+    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.4.Installer.x64.msi" `
+    -OutFile "$SoftwarePath\notepadpp.msi"
 
 # 7-Zip
 Get-Installer `
@@ -556,7 +557,7 @@ Get-Installer `
 $Apps = @(
     @{
         Name = "NotepadPP"
-        File = "notepadpp.exe"
+        File = "notepadpp.msi"
         Args = "/S"
         Check = "C:\Program Files\Notepad++\notepad++.exe"
         Shortcut = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Notepad++.lnk"
