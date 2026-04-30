@@ -445,7 +445,9 @@ $gpoIdLead = (Get-GPO $gpoLead).Id
     Log-Green "Done - log off and log back in"
 
 # ===== AUTO DRIVE MAPPING (WORKING METHOD) =====
+
 if (Confirm-Step "configure automatic drive mapping?") {
+    
     $Domain = Get-ADDomain
     $DomainName = $Domain.DNSRoot
     $Server = $env:COMPUTERNAME
@@ -483,4 +485,159 @@ net use L: \\$Server\LeadTeam /persistent:no
     Log-Green "Done - LOG OFF and log back in as user"
 }
 
-# ===== FINISHED :D =====
+# ===== SOFTWARE DEPLOYMENT (ALL-IN-ONE) =====
+
+if (Confirm-Step "deploy software to clients?") {
+
+Import-Module GroupPolicy
+Import-Module ActiveDirectory
+
+$Domain = Get-ADDomain
+$DomainDN = $Domain.DistinguishedName
+$DomainName = $Domain.DNSRoot
+
+$Server = $env:COMPUTERNAME
+
+# ===== PATHS =====
+$SoftwarePath = "D:\Software"
+$ShareName = "Software"
+
+# ===== CREATE SOFTWARE FOLDER =====
+if (-not (Test-Path $SoftwarePath)) {
+    New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
+    Log-Green "Created software folder"
+} else {
+    Log-Green "Software folder exists"
+}
+
+# ===== SHARE IT =====
+if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
+    New-SmbShare -Name $ShareName -Path $SoftwarePath -ReadAccess "Domain Computers" | Out-Null
+    Log-Green "Created software share"
+} else {
+    Log-Green "Software share exists"
+}
+
+# ===== APP RECIPE =====
+# ADD INSTALLERS HERE (place files manually in D:\Software)
+
+# ===== DOWNLOAD INSTALLERS =====
+
+function Get-Installer {
+    param(
+        [string]$Url,
+        [string]$OutFile
+    )
+
+    if (-not (Test-Path $OutFile)) {
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+            Log-Green "Downloaded: $OutFile"
+        }
+        catch {
+            Log-Red "Failed to download: $Url"
+        }
+    }
+    else {
+        Log-Green "Already exists: $OutFile"
+    }
+}
+
+# Notepad++
+Get-Installer `
+    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.6.6.Installer.x64.exe" `
+    -OutFile "$SoftwarePath\notepadpp.exe"
+
+# 7-Zip
+Get-Installer `
+    -Url "https://www.7-zip.org/a/7z2301-x64.exe" `
+    -OutFile "$SoftwarePath\7zip.exe"
+
+$Apps = @(
+    @{
+        Name = "NotepadPP"
+        File = "notepadpp.exe"
+        Args = "/S"
+        Check = "C:\Program Files\Notepad++\notepad++.exe"
+        Shortcut = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Notepad++.lnk"
+    },
+    @{
+        Name = "7zip"
+        File = "7zip.exe"
+        Args = "/S"
+        Check = "C:\Program Files\7-Zip\7z.exe"
+        Shortcut = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\7-Zip.lnk"
+    }
+)
+
+# ===== CREATE INSTALL SCRIPT CONTENT =====
+$scriptContent = @"
+`$share = "\\$Server\$ShareName"
+
+function Install-App {
+    param(`$name, `$file, `$args, `$check)
+
+    if (-not (Test-Path `$check)) {
+        Start-Process "`$share\`$file" -ArgumentList `$args -Wait
+    }
+}
+
+`$desktop = "C:\Users\Public\Desktop"
+`$shell = New-Object -ComObject WScript.Shell
+
+"@
+
+foreach ($app in $Apps) {
+
+$scriptContent += @"
+
+Install-App "$($app.Name)" "$($app.File)" "$($app.Args)" "$($app.Check)"
+
+if (Test-Path "$($app.Check)") {
+    `$sc = `$shell.CreateShortcut("`$desktop\$($app.Name).lnk")
+    `$sc.TargetPath = "$($app.Check)"
+    `$sc.Save()
+}
+
+"@
+}
+
+# ===== CREATE GPO =====
+$gpoName = "Software-Deploy"
+
+if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
+    New-GPO -Name $gpoName | Out-Null
+    Log-Green "Created GPO"
+}
+
+# Link to Computers OU
+$targetOU = "OU=Computers,$DomainDN"
+
+if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoName) {
+    New-GPLink -Name $gpoName -Target $targetOU -LinkEnabled Yes | Out-Null
+    Log-Green "Linked GPO to Computers OU"
+}
+
+# ===== PLACE SCRIPT IN GPO =====
+$gpoId = (Get-GPO $gpoName).Id
+$scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
+
+New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
+
+$scriptFile = "$scriptFolder\install-apps.ps1"
+$scriptContent | Out-File $scriptFile -Encoding ASCII
+
+# ===== CREATE scripts.ini =====
+@"
+[Startup]
+0CmdLine=powershell.exe
+0Parameters=-ExecutionPolicy Bypass -File install-apps.ps1
+"@ | Out-File "$scriptFolder\scripts.ini" -Encoding ASCII
+
+Log-Green "Startup script deployed"
+
+# ===== FORCE POLICY =====
+gpupdate /force
+
+Log-Green "DONE - reboot client to install apps"
+}
