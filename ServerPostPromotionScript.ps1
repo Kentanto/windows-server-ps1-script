@@ -196,9 +196,10 @@ catch {
 # ===== GPO and ou/user Configuration =====
 if (Confirm-Step "Add OU, users, groups, and GPOs?") {
     Import-Module ActiveDirectory
-    Import-Module GroupPolicy
+    Import-Module GroupPolicy    
 
     $RootOU = "Lab"
+    
 
 $ChildOUs = @(
         "Users",
@@ -319,6 +320,7 @@ Log-Green "Added Hans and Live to LeadTeam group"
     } catch {
         Log-Red "Failed to update domain password policy '$_'"
     }
+    redircmp "OU=Computers,OU=Lab,$((Get-ADDomain).DistinguishedName)"
 
     gpupdate /force
     Log-Green "Configuration complete"
@@ -391,7 +393,7 @@ if (Confirm-Step "set up shared folders and permissions?") {
     $gpoWork = "DriveMap-Work"
     New-GPO -Name $gpoWork | Out-Null
     Log-Green "Created GPO: $gpoWork"
-}
+
 
 $targetOU = "OU=Lab,$DomainDN"
 
@@ -443,7 +445,7 @@ $gpoIdLead = (Get-GPO $gpoLead).Id
 
     gpupdate /force
     Log-Green "Done - log off and log back in"
-
+}
 # ===== AUTO DRIVE MAPPING (WORKING METHOD) =====
 
 if (Confirm-Step "configure automatic drive mapping?") {
@@ -612,7 +614,7 @@ if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
 }
 
 # Link to Computers OU
-$targetOU = "OU=Computers,OU=Lab,$DomainDN"
+$targetOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Computers'" -SearchBase $DomainDN).DistinguishedName
 
 if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoName) {
     New-GPLink -Name $gpoName -Target $targetOU -LinkEnabled Yes | Out-Null
