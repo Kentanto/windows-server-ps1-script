@@ -612,7 +612,7 @@ if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
 }
 
 # Link to Computers OU
-$targetOU = "OU=Computers,$DomainDN"
+$targetOU = "OU=Computers,OU=Lab,$DomainDN"
 
 if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoName) {
     New-GPLink -Name $gpoName -Target $targetOU -LinkEnabled Yes | Out-Null
