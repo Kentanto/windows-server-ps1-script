@@ -460,10 +460,7 @@ if (Confirm-Step "configure automatic drive mapping?") {
     if (-not (Test-Path $ScriptPath)) {
         $ScriptContent = @"
 net use W: /delete /yes >nul 2>&1
-net use W: \\$Server\Work /persistent:no
-
-net use L: /delete /yes >nul 2>&1
-net use L: \\$Server\LeadTeam /persistent:no
+net use W: \\$Server /persistent:no
 "@
 
         $ScriptContent | Out-File $ScriptPath -Encoding ASCII
@@ -644,3 +641,5 @@ gpupdate /force
 
 Log-Green "DONE - reboot client to install apps"
 }
+
+# sets up everything but still doesnt quite make auto installing work, set up new clones and try again
