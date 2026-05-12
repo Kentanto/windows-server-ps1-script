@@ -545,7 +545,7 @@ function Get-Installer {
 
 # Notepad++
 Get-Installer `
-    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.4.Installer.x64.msi" `
+    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
     -OutFile "$SoftwarePath\notepadpp.msi"
 
 # 7-Zip
