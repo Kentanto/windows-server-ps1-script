@@ -386,8 +386,7 @@ if (Confirm-Step "set up shared folders and permissions?") {
         Log-Green "Share ready: $name"
     }
 
-    Ensure-Share "Work" $WorkPath "Domain Users"
-    Ensure-Share "LeadTeam" $LeadPath "LeadTeam"
+    Ensure-Share "Shares" $BasePath "Domain Users"
 
 
     $gpoWork = "DriveMap-Work"
@@ -460,7 +459,7 @@ if (Confirm-Step "configure automatic drive mapping?") {
     if (-not (Test-Path $ScriptPath)) {
         $ScriptContent = @"
 net use W: /delete /yes >nul 2>&1
-net use W: \\$Server /persistent:no
+net use W: \\$Server\Shares /persistent:no
 "@
 
         $ScriptContent | Out-File $ScriptPath -Encoding ASCII
