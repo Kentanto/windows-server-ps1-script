@@ -228,11 +228,13 @@ $ChildOUs = @(
         }
     }
 
-    $GroupName = "LeadTeam"
-
-    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
-        New-ADGroup -Name $GroupName -GroupScope Global -Path $DomainDN
-        Log-Green "Created group: $GroupName"
+    $Groups = @("LeadTeam", "HMS", "Sales", "Logistics")
+    
+    foreach ($GroupName in $Groups) {
+        if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
+            New-ADGroup -Name $GroupName -GroupScope Global -Path $DomainDN
+            Log-Green "Created group: $GroupName"
+        }
     }
 
     function Create-User {
@@ -265,8 +267,10 @@ Create-User "Torkjel Hansen" "Logistics"
 
 Add-ADGroupMember -Identity "LeadTeam" -Members "Frode Orebred" -ErrorAction SilentlyContinue
 Log-Green "Added Frode to LeadTeam group"
-Add-ADGroupMember -Identity "HMS", "Sales", "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
-Log-Green "Added Klara to HMS/Sales/Logistics group"
+Add-ADGroupMember -Identity "HMS" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
+Add-ADGroupMember -Identity "Sales" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
+Add-ADGroupMember -Identity "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
+Log-Green "Added Klara to HMS/Sales/Logistics groups"
 Add-ADGroupMember -Identity "Sales" -Members "Janne Hansen", "Fredrikk Larsen" -ErrorAction SilentlyContinue
 Log-Green "Added Janne and Fredrikk to Sales group"
 Add-ADGroupMember -Identity "Logistics" -Members "Peder Karlsen", "Britt Larsen", "Torkjel Hansen" -ErrorAction SilentlyContinue
