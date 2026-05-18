@@ -500,162 +500,112 @@ net use W: \\$Server\Shares /persistent:no
     Log-Green "Done - LOG OFF and log back in as user"
 }
 
-# ===== SOFTWARE DEPLOYMENT (ALL-IN-ONE) =====
+# ===== SOFTWARE DEPLOYMENT VIA GPO =====
 
-if (Confirm-Step "deploy software to clients?") {
+if (Confirm-Step "set up software deployment via GPO?") {
 
-Import-Module GroupPolicy
-Import-Module ActiveDirectory
+    Import-Module GroupPolicy
+    Import-Module ActiveDirectory
 
-$Domain = Get-ADDomain
-$DomainDN = $Domain.DistinguishedName
-$DomainName = $Domain.DNSRoot
+    $Domain = Get-ADDomain
+    $DomainDN = $Domain.DistinguishedName
+    $DomainName = $Domain.DNSRoot
+    $Server = $env:COMPUTERNAME
 
-$Server = $env:COMPUTERNAME
+    # ===== CREATE SOFTWARE SHARE =====
+    $SoftwarePath = "D:\Software"
+    $ShareName = "Software"
 
-# ===== PATHS =====
-$SoftwarePath = "D:\Software"
-$ShareName = "Software"
+    if (-not (Test-Path $SoftwarePath)) {
+        New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
+        Log-Green "Created software folder: $SoftwarePath"
+    }
 
-# ===== CREATE SOFTWARE FOLDER =====
-if (-not (Test-Path $SoftwarePath)) {
-    New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
-    Log-Green "Created software folder"
-} else {
-    Log-Green "Software folder exists"
+    if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
+        New-SmbShare -Name $ShareName -Path $SoftwarePath -FullAccess "Administrators" -ChangeAccess "Domain Computers" | Out-Null
+        Log-Green "Created network share: \\$Server\$ShareName"
+    } else {
+        Log-Green "Share already exists: \\$Server\$ShareName"
+    }
+
+    # ===== CREATE GPO FOR SOFTWARE INSTALLATION =====
+    $gpoName = "Software-Install"
+
+    if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $gpoName | Out-Null
+        Log-Green "Created GPO: $gpoName"
+    }
+
+    # Link GPO to Computers OU
+    $computersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Computers'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
+    
+    if ($computersOU -and -not ((Get-GPInheritance -Target $computersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $gpoName)) {
+        New-GPLink -Name $gpoName -Target $computersOU -LinkEnabled Yes | Out-Null
+        Log-Green "Linked GPO to Computers OU"
+    } elseif (-not $computersOU) {
+        Log-Red "Computers OU not found - manually link the GPO to your target OU"
+    }
+
+    # ===== CREATE LOGON SCRIPT FOR SOFTWARE INSTALLATION =====
+    $scriptName = "install-software.ps1"
+    $scriptPath = "\\$DomainName\NETLOGON\$scriptName"
+
+    $logonScript = @"
+# Software installation script - runs at user logon
+# Place MSI files in \\$Server\Software and they will be auto-installed
+
+`$softwareShare = "\\$Server\$ShareName"
+
+if (-not (Test-Path `$softwareShare)) {
+    exit 0
 }
 
-# ===== SHARE IT =====
-if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
-    New-SmbShare -Name $ShareName -Path $SoftwarePath -ReadAccess "Domain Computers" | Out-Null
-    Log-Green "Created software share"
-} else {
-    Log-Green "Software share exists"
+# Get all MSI files from the software share
+`$installers = Get-ChildItem -Path `$softwareShare -Filter "*.msi" -ErrorAction SilentlyContinue
+
+foreach (`$installer in `$installers) {
+    `$appPath = `$installer.FullName
+    `$appName = `$installer.BaseName
+    
+    # Check if already installed (basic check by looking for registry or file)
+    # You can customize this per application
+    
+    try {
+        # Silent install MSI
+        Start-Process msiexec.exe -ArgumentList "/i `"$`appPath`" /quiet /norestart" -Wait -NoNewWindow
+        Write-Host "[OK] Installed: `$appName" -ForegroundColor Green
+    } catch {
+        Write-Host "[ERROR] Failed to install: `$appName" -ForegroundColor Red
+    }
 }
+"@
 
-# ===== APP RECIPE =====
-# ADD INSTALLERS HERE (place files manually in D:\Software)
+    $logonScript | Out-File $scriptPath -Encoding ASCII -Force
 
-# ===== DOWNLOAD INSTALLERS =====
+    Log-Green "Logon script created: $scriptPath"
+    Log-Green "Script will install all .msi files from \\$Server\$ShareName"
 
-function Get-Installer {
-    param(
-        [string]$Url,
-        [string]$OutFile
-    )
+    # ===== ASSIGN LOGON SCRIPT TO USERS =====
+    $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
 
-    if (-not (Test-Path $OutFile)) {
+    foreach ($user in $Users) {
         try {
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
-            Log-Green "Downloaded: $OutFile"
-        }
-        catch {
-            Log-Red "Failed to download: $Url"
-            log-red "Error: $_"
+            Set-ADUser -Identity $user -ScriptPath $scriptName -ErrorAction SilentlyContinue
+            Log-Green "Assigned logon script to: $user"
+        } catch {
+            Log-Red "Could not assign script to: $user"
         }
     }
-    else {
-        Log-Green "Already exists: $OutFile"
-    }
-}
 
-# Notepad++
-Get-Installer `
-    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
-    -OutFile "$SoftwarePath\notepadpp.msi"
+    Log-Green ""
+    Log-Green "===== SOFTWARE DEPLOYMENT READY ====="
+    Log-Green "INSTRUCTIONS:"
+    Log-Green "1. Copy .MSI installer files to: \\$Server\$ShareName"
+    Log-Green "2. Users will auto-install on next logon"
+    Log-Green "3. Or manually run: msiexec /i \\$Server\$ShareName\filename.msi /quiet"
+    Log-Green ""
 
-# 7-Zip
-Get-Installer `
-    -Url "https://www.7-zip.org/a/7z2301-x64.exe" `
-    -OutFile "$SoftwarePath\7zip.exe"
-
-$Apps = @(
-    @{
-        Name = "NotepadPP"
-        File = "notepadpp.msi"
-        Args = "/S"
-        Check = "C:\Program Files\Notepad++\notepad++.exe"
-        Shortcut = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Notepad++.lnk"
-    },
-    @{
-        Name = "7zip"
-        File = "7zip.exe"
-        Args = "/S"
-        Check = "C:\Program Files\7-Zip\7z.exe"
-        Shortcut = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\7-Zip.lnk"
-    }
-)
-
-# ===== CREATE INSTALL SCRIPT CONTENT =====
-$scriptContent = @"
-`$share = "\\$Server\$ShareName"
-
-function Install-App {
-    param(`$name, `$file, `$args, `$check)
-
-    if (-not (Test-Path `$check)) {
-        Start-Process "`$share\`$file" -ArgumentList `$args -Wait
-    }
-}
-
-`$desktop = "C:\Users\Public\Desktop"
-`$shell = New-Object -ComObject WScript.Shell
-
-"@
-
-foreach ($app in $Apps) {
-
-$scriptContent += @"
-
-Install-App "$($app.Name)" "$($app.File)" "$($app.Args)" "$($app.Check)"
-
-if (Test-Path "$($app.Check)") {
-    `$sc = `$shell.CreateShortcut("`$desktop\$($app.Name).lnk")
-    `$sc.TargetPath = "$($app.Check)"
-    `$sc.Save()
-}
-
-"@
-}
-
-# ===== CREATE GPO =====
-$gpoName = "Software-Deploy"
-
-if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
-    New-GPO -Name $gpoName | Out-Null
-    Log-Green "Created GPO"
-}
-
-# Link to Computers OU
-$targetOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Computers'" -SearchBase $DomainDN).DistinguishedName
-
-if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoName) {
-    New-GPLink -Name $gpoName -Target $targetOU -LinkEnabled Yes | Out-Null
-    Log-Green "Linked GPO to Computers OU"
-}
-
-# ===== PLACE SCRIPT IN GPO =====
-$gpoId = (Get-GPO $gpoName).Id
-$scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
-
-New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
-
-$scriptFile = "$scriptFolder\install-apps.ps1"
-$scriptContent | Out-File $scriptFile -Encoding ASCII
-
-# ===== CREATE scripts.ini =====
-@"
-[Startup]
-0CmdLine=powershell.exe
-0Parameters=-ExecutionPolicy Bypass -File install-apps.ps1
-"@ | Out-File "$scriptFolder\scripts.ini" -Encoding ASCII
-
-Log-Green "Startup script deployed"
-
-# ===== FORCE POLICY =====
-gpupdate /force
-
-Log-Green "DONE - reboot client to install apps"
+    gpupdate /force
 }
 
 # check chatgpt for continuation
