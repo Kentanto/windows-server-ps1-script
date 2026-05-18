@@ -347,11 +347,12 @@ if (Confirm-Step "set up shared folders and permissions?") {
     $BasePath = "D:\Shares"
     $WorkPath = "$BasePath\Work"
     $LeadPath = "$BasePath\LeadTeam"
+    $SoftwarePath = "$BasePath\Software"
     $Server   = $env:COMPUTERNAME
     $Domain   = Get-ADDomain
     $DomainDN = $Domain.DistinguishedName
 
-    foreach ($path in @($BasePath, $WorkPath, $LeadPath)) {
+    foreach ($path in @($BasePath, $WorkPath, $LeadPath, $SoftwarePath)) {
         if (-not (Test-Path $path)) {
             New-Item -ItemType Directory -Path $path -Force | Out-Null
             Log-Green "Created folder: $path"
@@ -382,7 +383,7 @@ if (Confirm-Step "set up shared folders and permissions?") {
 
         Set-CleanAcl $WorkPath "Domain Users"
         Set-CleanAcl $LeadPath "LeadTeam"
-
+        Set-CleanAcl $SoftwarePath "Domain Users"
         Log-Green "NTFS permissions applied cleanly"
     } catch {
         Log-Red "NTFS setup failed: $_"
@@ -583,32 +584,36 @@ foreach (`$installer in `$installers) {
     $logonScript | Out-File $scriptPath -Encoding ASCII -Force
 
     Log-Green "Logon script created: $scriptPath"
-    Log-Green "Script will install all .msi files from \\$Server\$ShareName"
+    Log-Green "Script will install all .msi files from \\$Server.$DomainName\$ShareName"
+    
     function Get-Installer {
-    param(
-        [string]$Url,
-        [string]$OutFile
-    )
+        param(
+            [string]$Url,
+            [string]$OutFile
+        )
 
-    if (-not (Test-Path $OutFile)) {
-        try {
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
-            Log-Green "Downloaded: $OutFile"
+       if (-not (Test-Path $OutFile)) {
+            try {
+                Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+                Log-Green "Downloaded: $OutFile"
+            }
+            catch {
+                Log-Red "Failed to download: $Url"
+                Log-Red "Error: $_"
+            }
         }
-        catch {
-            Log-Red "Failed to download: $Url"
-            log-red "Error: $_"
+        else {
+            Log-Green "Already exists: $OutFile"
         }
     }
-    else {
-        Log-Green "Already exists: $OutFile"
-    }
-}
 
-# Notepad++
-Get-Installer `
-    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
-    -OutFile "\\$Server\$ShareName\notepadpp.msi"
+    # Download installers to network share (fully qualified path for GPO reliability)
+    $SoftwareSharePath = "\\$Server.$DomainName\$ShareName"
+    
+    # Notepad++
+    Get-Installer `
+        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
+        -OutFile "$SoftwareSharePath\notepadpp.msi"
 
     # ===== ASSIGN LOGON SCRIPT TO USERS =====
     $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
