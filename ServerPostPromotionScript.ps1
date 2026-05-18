@@ -265,11 +265,11 @@ Create-User "Torkjel Hansen" "Logistics"
 
 Add-ADGroupMember -Identity "LeadTeam" -Members "Frode Orebred" -ErrorAction SilentlyContinue
 Log-Green "Added Frode to LeadTeam group"
-Add-ADGroupMember - identity "HMS", "Sales", "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
+Add-ADGroupMember -Identity "HMS", "Sales", "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
 Log-Green "Added Klara to HMS/Sales/Logistics group"
-Add-ADGroupMember - identity "Sales" -Members "Janne Hansen", "Fredrikk Larsen" -ErrorAction SilentlyContinue
+Add-ADGroupMember -Identity "Sales" -Members "Janne Hansen", "Fredrikk Larsen" -ErrorAction SilentlyContinue
 Log-Green "Added Janne and Fredrikk to Sales group"
-Add-ADGroupMember - identity "Logistics" -Members "Peder Karlsen", "Britt Larsen", "Torkjel Hansen" -ErrorAction SilentlyContinue
+Add-ADGroupMember -Identity "Logistics" -Members "Peder Karlsen", "Britt Larsen", "Torkjel Hansen" -ErrorAction SilentlyContinue
 Log-Green "Added Peder, Britt, and Torkjel to Logistics group"
 
     try {
