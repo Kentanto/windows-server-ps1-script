@@ -406,99 +406,84 @@ if (Confirm-Step "set up shared folders and permissions?") {
 
     Ensure-Share "Shares" $BasePath "Domain Users"
 
-
-    $gpoWork = "DriveMap-Work"
-    New-GPO -Name $gpoWork | Out-Null
-    Log-Green "Created GPO: $gpoWork"
-
-
-$targetOU = "OU=Lab,$DomainDN"
-
-if ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -notcontains $gpoWork) {
-    New-GPLink -Name $gpoWork -Target $targetOU -LinkEnabled Yes | Out-Null
+    Log-Green "Shared folders and permissions configured"
 }
-
-$gpoIdWork = (Get-GPO $gpoWork).Id
-$gpoPathWork = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdWork}\User\Preferences\Drives"
-
-New-Item -ItemType Directory -Path $gpoPathWork -Force | Out-Null
-
-@"
-<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
-    <Drive name="Work Drive" status="Enabled">
-        <Properties action="U" letter="W" path="\\$Server\Work" />
-    </Drive>
-</Drives>
-"@ | Out-File "$gpoPathWork\Drives.xml" -Encoding UTF8
-
-Log-Green "Work drive mapped"
-
-$gpoLead = "DriveMap-LeadTeam"
-
-if (-not (Get-GPO -Name $gpoLead -ErrorAction SilentlyContinue)) {
-    New-GPO -Name $gpoLead | Out-Null
-}
-
-$leadOU = "OU=LeadTeam,OU=Lab,$DomainDN"
-
-if ((Get-GPInheritance -Target $leadOU).GpoLinks.DisplayName -notcontains $gpoLead) {
-    New-GPLink -Name $gpoLead -Target $leadOU -LinkEnabled Yes | Out-Null
-}
-
-$gpoIdLead = (Get-GPO $gpoLead).Id
-    $gpoPathLead = "\\$($Domain.DNSRoot)\SYSVOL\$($Domain.DNSRoot)\Policies\{$gpoIdLead}\User\Preferences\Drives"
-
-    New-Item -ItemType Directory -Path $gpoPathLead -Force | Out-Null
-
-    @"
-<Drives clsid="{C631DF4C-088F-4156-B058-4375F0853CD8}">
-    <Drive name="LeadTeam Drive" status="Enabled">
-        <Properties action="U" letter="L" path="\\$Server\LeadTeam" />
-    </Drive>
-</Drives>
-"@ | Out-File "$gpoPathLead\Drives.xml" -Encoding UTF8
-
-    Log-Green "LeadTeam drive mapped"
-
-    gpupdate /force
-    Log-Green "Done - log off and log back in"
-}
-# ===== AUTO DRIVE MAPPING (WORKING METHOD) =====
+# ===== AUTO DRIVE MAPPING VIA GPO (WORKING METHOD) =====
 
 if (Confirm-Step "configure automatic drive mapping?") {
     
     $Domain = Get-ADDomain
+    $DomainDN = $Domain.DistinguishedName
     $DomainName = $Domain.DNSRoot
     $Server = $env:COMPUTERNAME
 
-    $ScriptName = "map-drives.bat"
-    $ScriptPath = "\\$DomainName\NETLOGON\$ScriptName"
+    # ===== CREATE GPO FOR DRIVE MAPPING =====
+    $driveMapGpoName = "DriveMap-Logon"
 
-    if (-not (Test-Path $ScriptPath)) {
-        $ScriptContent = @"
+    if (-not (Get-GPO -Name $driveMapGpoName -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $driveMapGpoName | Out-Null
+        Log-Green "Created GPO: $driveMapGpoName"
+    }
+
+    # Link GPO to Users OU
+    $usersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Users'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
+    
+    if ($usersOU) {
+        if (-not ((Get-GPInheritance -Target $usersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $driveMapGpoName)) {
+            New-GPLink -Name $driveMapGpoName -Target $usersOU -LinkEnabled Yes | Out-Null
+            Log-Green "Linked GPO to Users OU"
+        } else {
+            Log-Green "GPO already linked to Users OU"
+        }
+    } else {
+        Log-Red "Users OU not found"
+        return
+    }
+
+    # ===== CREATE DRIVE MAPPING SCRIPT IN GPO =====
+    $driveMapGpoId = (Get-GPO $driveMapGpoName).Id
+    $gpoScriptPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$driveMapGpoId}\User\Scripts\Logon"
+
+    if (-not (Test-Path $gpoScriptPath)) {
+        New-Item -ItemType Directory -Path $gpoScriptPath -Force | Out-Null
+        Log-Green "Created GPO logon script folder"
+    }
+
+    # Create drive mapping script (batch file for reliability)
+    $driveMapScript = @"
+@echo off
+REM Delete existing W: mapping
 net use W: /delete /yes >nul 2>&1
-net use W: \\$Server\Shares /persistent:no
+
+REM Map W: drive to Shares root folder
+net use W: \\$Server\Shares /persistent:no >nul 2>&1
+
+exit /b 0
 "@
 
-        $ScriptContent | Out-File $ScriptPath -Encoding ASCII
-        Log-Green "Created logon script in NETLOGON"
-    } else {
-        Log-Green "Logon script already exists"
-    }
+    $driveMapFile = "$gpoScriptPath\map-drives.bat"
+    $driveMapScript | Out-File $driveMapFile -Encoding ASCII -Force
+    Log-Green "Deployed drive mapping script to GPO"
 
-    $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
+    # ===== CREATE scripts.ini TO REGISTER THE SCRIPT =====
+    $scriptsIni = @"
+[Logon]
+0CmdLine=map-drives.bat
+"@
 
-    foreach ($user in $Users) {
-        try {
-            Set-ADUser -Identity $user -ScriptPath $ScriptName
-            Log-Green "Assigned script to $user"
-        } catch {
-            Log-Red "Failed to assign script to $user"
-        }
-    }
+    $scriptsIni | Out-File "$gpoScriptPath\scripts.ini" -Encoding ASCII -Force
+    Log-Green "Created scripts.ini for GPO logon script"
+
+    Log-Green ""
+    Log-Green "===== DRIVE MAPPING READY ====="
+    Log-Green "GPO: $driveMapGpoName is linked to Users OU"
+    Log-Green "Script: $driveMapFile"
+    Log-Green "Users will have:"
+    Log-Green "  W: = \\$Server\Shares (all shared folders)"
+    Log-Green ""
 
     gpupdate /force
-    Log-Green "Done - LOG OFF and log back in as user"
+    Log-Green "Done - users will see drives mapped on next logon"
 }
 
 # ===== SOFTWARE DEPLOYMENT VIA GPO =====
@@ -530,23 +515,53 @@ if (Confirm-Step "set up software deployment via GPO?") {
         Log-Green "Share already exists: \\$Server\$ShareName"
     }
 
-    # ===== CREATE GPO FOR SOFTWARE INSTALLATION =====
-    $gpoName = "Software-Install"
+    # ===== CREATE GPO AND LINK TO USERS OU =====
+    $softwareGpoName = "Software-Install-Logon"
 
-    if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
-        New-GPO -Name $gpoName | Out-Null
-        Log-Green "Created GPO: $gpoName"
+    if (-not (Get-GPO -Name $softwareGpoName -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $softwareGpoName | Out-Null
+        Log-Green "Created GPO: $softwareGpoName"
     }
 
-    # Link GPO to Computers OU
-    $computersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Computers'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
+    # Link GPO to Users OU (where user accounts are)
+    $usersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Users'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
     
-    if ($computersOU -and -not ((Get-GPInheritance -Target $computersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $gpoName)) {
-        New-GPLink -Name $gpoName -Target $computersOU -LinkEnabled Yes | Out-Null
-        Log-Green "Linked GPO to Computers OU"
-    } elseif (-not $computersOU) {
-        Log-Red "Computers OU not found - manually link the GPO to your target OU"
+    if ($usersOU) {
+        if (-not ((Get-GPInheritance -Target $usersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $softwareGpoName)) {
+            New-GPLink -Name $softwareGpoName -Target $usersOU -LinkEnabled Yes | Out-Null
+            Log-Green "Linked GPO to Users OU"
+        } else {
+            Log-Green "GPO already linked to Users OU"
+        }
+    } else {
+        Log-Red "Users OU not found - cannot link GPO"
     }
+
+    # ===== PLACE LOGON SCRIPT IN GPO =====
+    $softwareGpoId = (Get-GPO $softwareGpoName).Id
+    $gpoScriptPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$softwareGpoId}\User\Scripts\Logon"
+
+    if (-not (Test-Path $gpoScriptPath)) {
+        New-Item -ItemType Directory -Path $gpoScriptPath -Force | Out-Null
+        Log-Green "Created GPO logon script folder"
+    }
+
+    # Copy script to GPO folder
+    $gpoScriptFile = "$gpoScriptPath\install-software.ps1"
+    $logonScript | Out-File $gpoScriptFile -Encoding ASCII -Force
+    Log-Green "Deployed logon script to GPO"
+
+    # ===== CREATE scripts.ini TO REGISTER THE SCRIPT =====
+    $scriptsIni = @"
+[Logon]
+0CmdLine=powershell.exe
+0Parameters=-ExecutionPolicy Bypass -File install-software.ps1
+"@
+
+    $scriptsIni | Out-File "$gpoScriptPath\scripts.ini" -Encoding ASCII -Force
+    Log-Green "Created scripts.ini for GPO logon script"
+
+    # ===== DOWNLOAD INSTALLERS =====
 
     # ===== CREATE LOGON SCRIPT FOR SOFTWARE INSTALLATION =====
     $scriptName = "install-software.ps1"
@@ -616,27 +631,14 @@ foreach (`$installer in `$installers) {
         -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
         -OutFile "$SoftwareSharePath\notepadpp.msi"
 
-    # ===== ASSIGN LOGON SCRIPT TO USERS =====
-    $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
-
-    foreach ($user in $Users) {
-        try {
-            Set-ADUser -Identity $user -ScriptPath $scriptName -ErrorAction SilentlyContinue
-            Log-Green "Assigned logon script to: $user"
-        } catch {
-            Log-Red "Could not assign script to: $user"
-        }
-    }
-
     Log-Green ""
-    Log-Green "===== SOFTWARE DEPLOYMENT READY ====="
+    Log-Green "===== SOFTWARE DEPLOYMENT VIA GPO READY ====="
     Log-Green "INSTRUCTIONS:"
-    Log-Green "1. Copy .MSI installer files to: \\$Server\$ShareName"
-    Log-Green "2. Users will auto-install on next logon"
-    Log-Green "3. Or manually run: msiexec /i \\$Server\$ShareName\filename.msi /quiet"
+    Log-Green "1. Copy .MSI installer files to: \\$Server.$DomainName\$ShareName"
+    Log-Green "2. Users in the Users OU will auto-install on next logon via GPO"
+    Log-Green "3. GPO: $softwareGpoName is linked to Users OU"
+    Log-Green "4. Script location: $gpoScriptFile"
     Log-Green ""
 
     gpupdate /force
 }
-
-# check chatgpt for continuation
