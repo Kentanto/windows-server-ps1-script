@@ -514,7 +514,8 @@ if (Confirm-Step "set up software deployment via GPO?") {
     $Server = $env:COMPUTERNAME
 
     # ===== CREATE SOFTWARE SHARE =====
-    $SoftwarePath = "D:\Software"
+    $BasePath = "D:\Shares"
+    $SoftwarePath = "$BasePath\Software"
     $ShareName = "Software"
 
     if (-not (Test-Path $SoftwarePath)) {
