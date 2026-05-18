@@ -584,6 +584,31 @@ foreach (`$installer in `$installers) {
 
     Log-Green "Logon script created: $scriptPath"
     Log-Green "Script will install all .msi files from \\$Server\$ShareName"
+    function Get-Installer {
+    param(
+        [string]$Url,
+        [string]$OutFile
+    )
+
+    if (-not (Test-Path $OutFile)) {
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+            Log-Green "Downloaded: $OutFile"
+        }
+        catch {
+            Log-Red "Failed to download: $Url"
+            log-red "Error: $_"
+        }
+    }
+    else {
+        Log-Green "Already exists: $OutFile"
+    }
+}
+
+# Notepad++
+Get-Installer `
+    -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
+    -OutFile "\\$Server\$ShareName\notepadpp.msi"
 
     # ===== ASSIGN LOGON SCRIPT TO USERS =====
     $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
