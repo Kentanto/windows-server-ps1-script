@@ -29,10 +29,10 @@ function Confirm-Step {
     }
 }
 
-$IP        = "192.168.20.45"
+$IP        = "192.168.1.45"
 $Prefix    = 24
-$Gateway   = "192.168.20.1"
-$DNS       = "192.168.20.1"
+$Gateway   = "192.168.1.1"
+$DNS       = "192.168.1.1"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -113,11 +113,11 @@ if (Confirm-Step "Set static IP?") {
 
 if (Confirm-Step "Configure DHCP?") {
     $ScopeName = "LAN Scope"
-    $ScopeID   = "192.168.20.0"
-    $StartIP   = "192.168.20.150"
-    $EndIP     = "192.168.20.200"
+    $ScopeID   = "192.168.1.0"
+    $StartIP   = "192.168.1.150"
+    $EndIP     = "192.168.1.200"
     $Subnet    = "255.255.255.0"
-    $Gateway   = "192.168.20.1"
+    $Gateway   = "192.168.1.1"
     $DNS       = "127.0.0.1"
     $LeaseTime = "2.00:00:00"
 
