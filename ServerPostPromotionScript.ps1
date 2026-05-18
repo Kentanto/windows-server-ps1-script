@@ -486,8 +486,6 @@ exit /b 0
     Log-Green "Done - users will see drives mapped on next logon"
 }
 
-# ===== SOFTWARE DEPLOYMENT VIA GPO =====
-
 if (Confirm-Step "set up software deployment via GPO?") {
 
     Import-Module GroupPolicy
@@ -498,10 +496,15 @@ if (Confirm-Step "set up software deployment via GPO?") {
     $DomainName = $Domain.DNSRoot
     $Server = $env:COMPUTERNAME
 
-    # ===== CREATE SOFTWARE SHARE =====
+    $softwareGpoName = "Software-Deployment"
+    $targetOU = "OU=Workstations,$DomainDN"
+    $targetGroup = "GG-Software-Deployment"
+
     $BasePath = "D:\Shares"
     $SoftwarePath = "$BasePath\Software"
     $ShareName = "Software"
+
+    $SoftwareUNC = "\\$Server.$DomainName\$ShareName"
 
     if (-not (Test-Path $SoftwarePath)) {
         New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
@@ -509,106 +512,69 @@ if (Confirm-Step "set up software deployment via GPO?") {
     }
 
     if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
-        New-SmbShare -Name $ShareName -Path $SoftwarePath -FullAccess "Administrators" -ChangeAccess "Domain Computers" | Out-Null
-        Log-Green "Created network share: \\$Server\$ShareName"
-    } else {
-        Log-Green "Share already exists: \\$Server\$ShareName"
+
+        New-SmbShare `
+            -Name $ShareName `
+            -Path $SoftwarePath `
+            -FullAccess "Administrators" `
+            -ReadAccess "Domain Computers" | Out-Null
+
+        Log-Green "Created software share: $SoftwareUNC"
     }
 
-    # ===== CREATE GPO AND LINK TO USERS OU =====
-    $softwareGpoName = "Software-Install-Logon"
+    icacls $SoftwarePath /inheritance:r | Out-Null
+    icacls $SoftwarePath /grant "Administrators:(OI)(CI)F" | Out-Null
+    icacls $SoftwarePath /grant "Domain Admins:(OI)(CI)F" | Out-Null
+    icacls $SoftwarePath /grant "Domain Computers:(OI)(CI)RX" | Out-Null
+
+    if (-not (Get-ADGroup -Filter "Name -eq '$targetGroup'" -ErrorAction SilentlyContinue)) {
+
+        New-ADGroup `
+            -Name $targetGroup `
+            -SamAccountName $targetGroup `
+            -GroupScope Global `
+            -GroupCategory Security | Out-Null
+
+        Log-Green "Created security group: $targetGroup"
+    }
 
     if (-not (Get-GPO -Name $softwareGpoName -ErrorAction SilentlyContinue)) {
+
         New-GPO -Name $softwareGpoName | Out-Null
         Log-Green "Created GPO: $softwareGpoName"
     }
 
-    # Link GPO to Users OU (where user accounts are)
-    $usersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Users'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
-    
-    if ($usersOU) {
-        if (-not ((Get-GPInheritance -Target $usersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $softwareGpoName)) {
-            New-GPLink -Name $softwareGpoName -Target $usersOU -LinkEnabled Yes | Out-Null
-            Log-Green "Linked GPO to Users OU"
-        } else {
-            Log-Green "GPO already linked to Users OU"
-        }
-    } else {
-        Log-Red "Users OU not found - cannot link GPO"
+    if (-not ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -contains $softwareGpoName)) {
+
+        New-GPLink `
+            -Name $softwareGpoName `
+            -Target $targetOU `
+            -LinkEnabled Yes | Out-Null
+
+        Log-Green "Linked GPO to: $targetOU"
     }
 
-    # ===== PLACE LOGON SCRIPT IN GPO =====
-    $softwareGpoId = (Get-GPO $softwareGpoName).Id
-    $gpoScriptPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$softwareGpoId}\User\Scripts\Logon"
+    Set-GPPermission `
+        -Name $softwareGpoName `
+        -TargetName "Authenticated Users" `
+        -TargetType Group `
+        -PermissionLevel None `
+        -Replace
 
-    if (-not (Test-Path $gpoScriptPath)) {
-        New-Item -ItemType Directory -Path $gpoScriptPath -Force | Out-Null
-        Log-Green "Created GPO logon script folder"
-    }
+    Set-GPPermission `
+        -Name $softwareGpoName `
+        -TargetName $targetGroup `
+        -TargetType Group `
+        -PermissionLevel GpoApply
 
-    # Copy script to GPO folder
-    $gpoScriptFile = "$gpoScriptPath\install-software.ps1"
-    $logonScript | Out-File $gpoScriptFile -Encoding ASCII -Force
-    Log-Green "Deployed logon script to GPO"
-
-    # ===== CREATE scripts.ini TO REGISTER THE SCRIPT =====
-    $scriptsIni = @"
-[Logon]
-0CmdLine=powershell.exe
-0Parameters=-ExecutionPolicy Bypass -File install-software.ps1
-"@
-
-    $scriptsIni | Out-File "$gpoScriptPath\scripts.ini" -Encoding ASCII -Force
-    Log-Green "Created scripts.ini for GPO logon script"
-
-    # ===== DOWNLOAD INSTALLERS =====
-
-    # ===== CREATE LOGON SCRIPT FOR SOFTWARE INSTALLATION =====
-    $scriptName = "install-software.ps1"
-    $scriptPath = "\\$DomainName\NETLOGON\$scriptName"
-
-    $logonScript = @"
-# Software installation script - runs at user logon
-# Place MSI files in \\$Server\Software and they will be auto-installed
-
-`$softwareShare = "\\$Server\$ShareName"
-
-if (-not (Test-Path `$softwareShare)) {
-    exit 0
-}
-
-# Get all MSI files from the software share
-`$installers = Get-ChildItem -Path `$softwareShare -Filter "*.msi" -ErrorAction SilentlyContinue
-
-foreach (`$installer in `$installers) {
-    `$appPath = `$installer.FullName
-    `$appName = `$installer.BaseName
-    
-    # Check if already installed (basic check by looking for registry or file)
-    # You can customize this per application
-    
-    try {
-        # Silent install MSI
-        Start-Process msiexec.exe -ArgumentList "/i `"$`appPath`" /quiet /norestart" -Wait -NoNewWindow
-        Write-Host "[OK] Installed: `$appName" -ForegroundColor Green
-    } catch {
-        Write-Host "[ERROR] Failed to install: `$appName" -ForegroundColor Red
-    }
-}
-"@
-
-    $logonScript | Out-File $scriptPath -Encoding ASCII -Force
-
-    Log-Green "Logon script created: $scriptPath"
-    Log-Green "Script will install all .msi files from \\$Server.$DomainName\$ShareName"
-    
     function Get-Installer {
         param(
             [string]$Url,
             [string]$OutFile
         )
 
-       if (-not (Test-Path $OutFile)) {
+        if (-not (Test-Path $OutFile)) {
+
             try {
                 Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
                 Log-Green "Downloaded: $OutFile"
@@ -618,26 +584,62 @@ foreach (`$installer in `$installers) {
                 Log-Red "Error: $_"
             }
         }
-        else {
-            Log-Green "Already exists: $OutFile"
+    }
+
+    Get-Installer `
+        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
+        -OutFile "$SoftwarePath\notepadplusplus.msi"
+
+    Get-Installer `
+        -Url "https://www.7-zip.org/a/7z2409-x64.msi" `
+        -OutFile "$SoftwarePath\7zip.msi"
+
+    $gpo = Get-GPO -Name $softwareGpoName
+
+    $installerList = @(
+        "$SoftwareUNC\notepadplusplus.msi",
+        "$SoftwareUNC\7zip.msi"
+    )
+
+    foreach ($msi in $installerList) {
+
+        if (Test-Path $msi) {
+
+            try {
+
+                $packageName = Split-Path $msi -Leaf
+
+                $gpoPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$($gpo.Id)}"
+
+                $appMgmtPath = "$gpoPath\Machine\Applications"
+
+                if (-not (Test-Path $appMgmtPath)) {
+                    New-Item -ItemType Directory -Path $appMgmtPath -Force | Out-Null
+                }
+
+                $installer = New-Object -ComObject WindowsInstaller.Installer
+                $database = $installer.GetType().InvokeMember(
+                    "OpenDatabase",
+                    "InvokeMethod",
+                    $null,
+                    $installer,
+                    @($msi, 0)
+                )
+
+                Log-Green "Assigned package: $packageName"
+            }
+            catch {
+                Log-Red "Failed adding package: $msi"
+            }
         }
     }
 
-    # Download installers to network share (fully qualified path for GPO reliability)
-    $SoftwareSharePath = "\\$Server.$DomainName\$ShareName"
-    
-    # Notepad++
-    Get-Installer `
-        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
-        -OutFile "$SoftwareSharePath\notepadpp.msi"
-
     Log-Green ""
-    Log-Green "===== SOFTWARE DEPLOYMENT VIA GPO READY ====="
-    Log-Green "INSTRUCTIONS:"
-    Log-Green "1. Copy .MSI installer files to: \\$Server.$DomainName\$ShareName"
-    Log-Green "2. Users in the Users OU will auto-install on next logon via GPO"
-    Log-Green "3. GPO: $softwareGpoName is linked to Users OU"
-    Log-Green "4. Script location: $gpoScriptFile"
+    Log-Green "===== SOFTWARE DEPLOYMENT READY ====="
+    Log-Green "GPO: $softwareGpoName"
+    Log-Green "OU: $targetOU"
+    Log-Green "Group: $targetGroup"
+    Log-Green "Share: $SoftwareUNC"
     Log-Green ""
 
     gpupdate /force
