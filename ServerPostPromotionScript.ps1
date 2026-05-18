@@ -29,10 +29,10 @@ function Confirm-Step {
     }
 }
 
-$IP        = "192.168.5.45"
+$IP        = "192.168.20.45"
 $Prefix    = 24
-$Gateway   = "192.168.5.1"
-$DNS       = "192.168.5.1"
+$Gateway   = "192.168.20.1"
+$DNS       = "192.168.20.1"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -113,11 +113,11 @@ if (Confirm-Step "Set static IP?") {
 
 if (Confirm-Step "Configure DHCP?") {
     $ScopeName = "LAN Scope"
-    $ScopeID   = "192.168.5.0"
-    $StartIP   = "192.168.5.150"
-    $EndIP     = "192.168.5.200"
+    $ScopeID   = "192.168.20.0"
+    $StartIP   = "192.168.20.150"
+    $EndIP     = "192.168.20.200"
     $Subnet    = "255.255.255.0"
-    $Gateway   = "192.168.5.1"
+    $Gateway   = "192.168.20.1"
     $DNS       = "127.0.0.1"
     $LeaseTime = "2.00:00:00"
 
@@ -206,7 +206,10 @@ $ChildOUs = @(
         "Admins",
         "Computers",
         "LeadTeam",
-        "IT"
+        "IT",
+        "HMS",
+        "Sales",
+        "Logistics"
     )
 
     $Domain = Get-ADDomain
@@ -252,12 +255,22 @@ $ChildOUs = @(
             Log-Green "Created user: $Name in $OU"
         }
     }
-Create-User "Hans" "LeadTeam"
-Create-User "Live" "LeadTeam"
-Create-User "Kine" "IT"
+Create-User "Frode Orebred" "LeadTeam"
+Create-User "Klara Orebredt" "HMS"
+Create-User "Janne Hansen" "Sales"
+Create-User "Fredrikk Larsen" "Sales"
+Create-User "Peder Karlsen" "Logistics"
+Create-User "Britt Larsen" "Logistics"
+Create-User "Torkjel Hansen" "Logistics"
 
-Add-ADGroupMember -Identity "LeadTeam" -Members "Hans","Live" -ErrorAction SilentlyContinue
-Log-Green "Added Hans and Live to LeadTeam group"
+Add-ADGroupMember -Identity "LeadTeam" -Members "Frode Orebred" -ErrorAction SilentlyContinue
+Log-Green "Added Frode to LeadTeam group"
+Add-ADGroupMember - identity "HMS", "Sales", "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
+Log-Green "Added Klara to HMS/Sales/Logistics group"
+Add-ADGroupMember - identity "Sales" -Members "Janne Hansen", "Fredrikk Larsen" -ErrorAction SilentlyContinue
+Log-Green "Added Janne and Fredrikk to Sales group"
+Add-ADGroupMember - identity "Logistics" -Members "Peder Karlsen", "Britt Larsen", "Torkjel Hansen" -ErrorAction SilentlyContinue
+Log-Green "Added Peder, Britt, and Torkjel to Logistics group"
 
     try {
     Set-ADUser -Identity "Administrator" -PasswordNeverExpires $false
@@ -468,7 +481,7 @@ net use W: \\$Server\Shares /persistent:no
         Log-Green "Logon script already exists"
     }
 
-    $Users = @("Hans", "Live", "Kine")
+    $Users = @("Frode Orebred", "Klara Orebredt", "Janne Hansen", "Fredrikk Larsen", "Peder Karlsen", "Britt Larsen", "Torkjel Hansen")
 
     foreach ($user in $Users) {
         try {
@@ -641,4 +654,4 @@ gpupdate /force
 Log-Green "DONE - reboot client to install apps"
 }
 
-# sets up everything but still doesnt quite make auto installing work, set up new clones and try again
+# check chatgpt for continuation
