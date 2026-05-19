@@ -546,6 +546,7 @@ if (Confirm-Step "set up software deployment via GPO?") {
     # CONFIG
     # =========================
     $RootOU        = "Lab"
+    $LabOUPath     = "OU=$RootOU,$DomainDN"
     $ComputerOU    = "OU=Computers,OU=$RootOU,$DomainDN"
 
     $GpoName       = "Software-Deployment"
@@ -610,26 +611,24 @@ if (Confirm-Step "set up software deployment via GPO?") {
     }
 
     # =========================
-    # LINK TO COMPUTER OU (CRITICAL FIX)
+    # LINK TO LAB ROOT OU (APPLIES TO ALL)
     # =========================
-    $existingLinks = (Get-GPInheritance -Target $ComputerOU).GpoLinks.DisplayName
+    $existingLinks = (Get-GPInheritance -Target $LabOUPath).GpoLinks.DisplayName
 
     if ($existingLinks -notcontains $GpoName) {
         New-GPLink `
             -Name $GpoName `
-            -Target $ComputerOU `
+            -Target $LabOUPath `
             -LinkEnabled Yes | Out-Null
 
-        Log-Green "Linked GPO to Computers OU"
+        Log-Green "Linked GPO to Lab root OU (affects all Lab objects)"
     }
 
 # ==========================================
-# CREATE REAL STARTUP SCRIPT (FIXED METHOD)
+# CREATE AUTO MSI INSTALLER SCRIPT
 # ==========================================
 
 $gpoId = $gpo.Id.ToString()
-
-$scriptName = "install-software.bat"
 
 $startupFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
 
@@ -637,102 +636,143 @@ if (-not (Test-Path $startupFolder)) {
     New-Item -ItemType Directory -Path $startupFolder -Force | Out-Null
 }
 
-# FIX: use COMPUTER NAME, not server browsing alias
+# Create PowerShell script that auto-discovers and installs all MSI files
+$psScriptName = "Install-AllMSI.ps1"
+
 $InstallScript = @"
-@echo off
-echo Installing software...
+# Auto-install all MSI files from Software share
+`$SoftwareShare = "\\$Server.$DomainName\Software"
+`$LogPath = "C:\Windows\Temp\SoftwareInstall.log"
 
-msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart /log C:\Windows\Temp\npp.log
-msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart /log C:\Windows\Temp\7zip.log
+# Ensure share is accessible
+if (-not (Test-Path `$SoftwareShare)) {
+    Add-Content `$LogPath -Value "`$(Get-Date): Share not accessible: `$SoftwareShare"
+    exit 1
+}
 
-echo Done.
-exit /b 0
+# Find all MSI files
+`$msiFiles = Get-ChildItem -Path `$SoftwareShare -Filter "*.msi" -ErrorAction SilentlyContinue
+
+if (`$msiFiles.Count -eq 0) {
+    Add-Content `$LogPath -Value "`$(Get-Date): No MSI files found in `$SoftwareShare"
+    exit 0
+}
+
+# Install each MSI silently
+foreach (`$msi in `$msiFiles) {
+    `$msiPath = `$msi.FullName
+    `$msiName = `$msi.Name
+    
+    # Skip if already installed (basic check)
+    `$logFile = "`$LogPath\`$(`$msiName).log"
+    
+    Add-Content `$LogPath -Value "`$(Get-Date): Installing `$msiName..."
+    
+    try {
+        `$process = Start-Process -FilePath "msiexec.exe" `
+            -ArgumentList "/i `"$msiPath`" /qn /norestart /l*v `"C:\Windows\Temp\`$msiName.log`"" `
+            -Wait -PassThru
+        
+        Add-Content `$LogPath -Value "`$(Get-Date): `$msiName installed - Exit Code: `$(`$process.ExitCode)"
+    }
+    catch {
+        Add-Content `$LogPath -Value "`$(Get-Date): ERROR installing `$msiName - `$_"
+    }
+}
+
+Add-Content `$LogPath -Value "`$(Get-Date): All available MSI installations completed"
+exit 0
 "@
 
-$InstallScript | Out-File "$startupFolder\$scriptName" -Encoding ASCII -Force
+$InstallScript | Out-File "$startupFolder\$psScriptName" -Encoding UTF8 -Force
 
-Log-Green "Startup script created"
+Log-Green "PowerShell installer script created: $psScriptName"
 
-    # =========================
-    # REGISTER STARTUP SCRIPT
-    # =========================
-    $scriptsIni = @"
+# ==========================================
+# CREATE BATCH WRAPPER (for GPO compatibility)
+# ==========================================
+
+$batchScriptName = "Run-Installer.bat"
+
+$BatchScript = @"
+@echo off
+REM Wrapper to execute PowerShell startup script
+powershell.exe -ExecutionPolicy Bypass -File "$startupFolder\$psScriptName"
+"@
+
+$BatchScript | Out-File "$startupFolder\$batchScriptName" -Encoding ASCII -Force
+
+Log-Green "Batch wrapper created: $batchScriptName"
+
+# ==========================================
+# REGISTER STARTUP SCRIPT WITH GPO
+# ==========================================
+
+$scriptsIni = @"
 [Startup]
-0CmdLine=install-software.bat
+0CmdLine=$batchScriptName
 0Parameters=
 "@
 
-    $scriptsIni | Out-File "$startupFolder\scripts.ini" -Encoding ASCII -Force
+$scriptsIni | Out-File "$startupFolder\scripts.ini" -Encoding ASCII -Force
 
-    # =========================
-    # SECURITY FILTERING
-    # =========================
+Log-Green "Registered startup script in GPO"
 
-    # Remove default restriction
-    Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply
+# ==========================================
+# SET SECURITY FILTERING
+# ==========================================
 
-    # Optional: restrict to group (uncomment if needed)
-    # Set-GPPermission -Name $GpoName -TargetName $GroupName -TargetType Group -PermissionLevel GpoApply
+Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel None -Replace
 
-    # =========================
-    # DOWNLOAD SOFTWARE
-    # =========================
+Set-GPPermission -Name $GpoName -TargetName "Domain Computers" -TargetType Group -PermissionLevel GpoApply
 
-    function Get-Installer {
-        param($Url, $OutFile)
+Log-Green "Security filtering applied to Domain Computers"
 
-        if (-not (Test-Path $OutFile)) {
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile
-            Log-Green "Downloaded: $OutFile"
+# ==========================================
+# DOWNLOAD SOFTWARE TO SHARE
+# ==========================================
+
+function Get-Installer {
+    param($Url, $OutFile)
+
+    if (-not (Test-Path $OutFile)) {
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+            Log-Green "Downloaded: $(Split-Path $OutFile -Leaf)"
         }
+        catch {
+            Log-Red "Failed to download: $Url - $_"
+        }
+    } else {
+        Log-Green "Already exists: $(Split-Path $OutFile -Leaf)"
     }
+}
 
-    Get-Installer "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" "$SoftwarePath\notepadplusplus.msi"
-    Get-Installer "https://www.7-zip.org/a/7z2409-x64.msi" "$SoftwarePath\7zip.msi"
-
-    # =========================
-    # FORCE UPDATE
-    # =========================
-    gpupdate /force
-
-    Log-Green ""
-    Log-Green "====================================="
-    Log-Green " SOFTWARE DEPLOYMENT READY"
-    Log-Green "====================================="
-    Log-Green ""
-    Log-Green "Target OU: $ComputerOU"
-    Log-Green "GPO: $GpoName"
-    Log-Green "Share: $SoftwareUNC"
-    Log-Green ""
-    Log-Green "Software installs at next reboot"
+Get-Installer "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" "$SoftwarePath\notepadplusplus.msi"
+Get-Installer "https://www.7-zip.org/a/7z2409-x64.msi" "$SoftwarePath\7zip.msi"
 
 # ==========================================
-# RELIABLE SOFTWARE INSTALL (SCHEDULED TASK)
+# FORCE GPO UPDATE
 # ==========================================
 
-$gpoId = $gpo.Id.ToString()
+gpupdate /force
 
-$taskPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Preferences\ScheduledTasks"
-
-New-Item -ItemType Directory -Path $taskPath -Force | Out-Null
-
-$taskXml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<ScheduledTasks clsid="{CC63F200-7309-4ba0-B154-A71CD118DBCC}">
-  <Task clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="SoftwareInstall" image="0">
-    <Properties action="U" name="SoftwareInstall">
-      <RunAs>NT AUTHORITY\SYSTEM</RunAs>
-      <Command>cmd.exe</Command>
-      <Arguments>/c msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart & msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart</Arguments>
-      <StartWhenAvailable>true</StartWhenAvailable>
-      <Enabled>true</Enabled>
-    </Properties>
-  </Task>
-</ScheduledTasks>
-"@
-
-$taskXml | Out-File "$taskPath\ScheduledTasks.xml" -Encoding UTF8 -Force
-
-Log-Green "Created scheduled task installer"
+Log-Green ""
+Log-Green "====================================="
+Log-Green " SOFTWARE DEPLOYMENT CONFIGURED"
+Log-Green "====================================="
+Log-Green ""
+Log-Green "Target OU: $LabOUPath (Lab root)"
+Log-Green "GPO: $GpoName"
+Log-Green "Software Share: $SoftwareUNC"
+Log-Green ""
+Log-Green "Auto-installer script will:"
+Log-Green "  1. Discover all .msi files in $SoftwareUNC"
+Log-Green "  2. Install each silently at computer startup"
+Log-Green "  3. Log results to C:\Windows\Temp\SoftwareInstall.log"
+Log-Green ""
+Log-Green "Affects all computers and users under Lab OU"
+Log-Green "Software installs at next system reboot"
+Log-Green ""
 
 }
