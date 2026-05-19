@@ -705,4 +705,34 @@ Log-Green "Startup script created"
     Log-Green "Share: $SoftwareUNC"
     Log-Green ""
     Log-Green "Software installs at next reboot"
+
+# ==========================================
+# RELIABLE SOFTWARE INSTALL (SCHEDULED TASK)
+# ==========================================
+
+$gpoId = $gpo.Id.ToString()
+
+$taskPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Preferences\ScheduledTasks"
+
+New-Item -ItemType Directory -Path $taskPath -Force | Out-Null
+
+$taskXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<ScheduledTasks clsid="{CC63F200-7309-4ba0-B154-A71CD118DBCC}">
+  <Task clsid="{D8896631-B747-47a7-84A6-C155337F3BC8}" name="SoftwareInstall" image="0">
+    <Properties action="U" name="SoftwareInstall">
+      <RunAs>NT AUTHORITY\SYSTEM</RunAs>
+      <Command>cmd.exe</Command>
+      <Arguments>/c msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart & msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart</Arguments>
+      <StartWhenAvailable>true</StartWhenAvailable>
+      <Enabled>true</Enabled>
+    </Properties>
+  </Task>
+</ScheduledTasks>
+"@
+
+$taskXml | Out-File "$taskPath\ScheduledTasks.xml" -Encoding UTF8 -Force
+
+Log-Green "Created scheduled task installer"
+
 }
