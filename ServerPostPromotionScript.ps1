@@ -536,7 +536,7 @@ if (Confirm-Step "set up software deployment via GPO?") {
     $Server = $env:COMPUTERNAME
 
     $softwareGpoName = "Software-Deployment"
-    $targetOU = "OU=Workstations,$DomainDN"
+    $targetOU = "OU=Computers,$rootPath"
     $targetGroup = "GG-Software-Deployment"
 
     $BasePath = "D:\Shares"
@@ -626,7 +626,7 @@ if (Confirm-Step "set up software deployment via GPO?") {
     }
 
     Get-Installer `
-        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/latest/download/npp.8.9.5.Installer.x64.msi" `
+        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" `
         -OutFile "$SoftwarePath\notepadplusplus.msi"
 
     Get-Installer `
