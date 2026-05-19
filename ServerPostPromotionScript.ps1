@@ -407,7 +407,7 @@ if (Confirm-Step "set up shared folders and permissions?") {
     Ensure-Share "Shares" $BasePath "Domain Users"
 
     Log-Green "Shared folders and permissions configured"
-}
+
 
 # ==========================================
 # AUTO DRIVE MAPPING VIA GPO (LAB STRUCTURE)
@@ -528,6 +528,7 @@ Write-Host ""
 # ==========================================
 # SOFTWARE DEPLOYMENT (WORKING VERSION)
 # ==========================================
+}
 
 if (Confirm-Step "set up software deployment via GPO?") {
 
@@ -722,9 +723,7 @@ Log-Green "Registered startup script in GPO"
 # SET SECURITY FILTERING
 # ==========================================
 
-Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel None -Replace
-
-Set-GPPermission -Name $GpoName -TargetName "Domain Computers" -TargetType Group -PermissionLevel GpoApply
+Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply -Replace
 
 Log-Green "Security filtering applied to Domain Computers"
 
