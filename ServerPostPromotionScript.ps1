@@ -525,164 +525,178 @@ Write-Host "All users in LAB OU tree will get:"
 Write-Host "$DriveLetter`: -> $UNCPath"
 Write-Host ""
 
+# ==========================================
+# SOFTWARE DEPLOYMENT (WORKING VERSION)
+# ==========================================
+
 if (Confirm-Step "set up software deployment via GPO?") {
 
-    Import-Module GroupPolicy
     Import-Module ActiveDirectory
+    Import-Module GroupPolicy
 
-    $Domain = Get-ADDomain
-    $DomainDN = $Domain.DistinguishedName
+    # =========================
+    # DOMAIN INFO
+    # =========================
+    $Domain     = Get-ADDomain
+    $DomainDN   = $Domain.DistinguishedName
     $DomainName = $Domain.DNSRoot
-    $Server = $env:COMPUTERNAME
+    $Server     = $env:COMPUTERNAME
 
-    $softwareGpoName = "Software-Deployment"
-    $targetOU = "OU=Computers,$rootPath"
-    $targetGroup = "GG-Software-Deployment"
+    # =========================
+    # CONFIG
+    # =========================
+    $RootOU        = "Lab"
+    $ComputerOU    = "OU=Computers,OU=$RootOU,$DomainDN"
 
-    $BasePath = "D:\Shares"
-    $SoftwarePath = "$BasePath\Software"
-    $ShareName = "Software"
+    $GpoName       = "Software-Deployment"
+    $GroupName     = "GG-Software-Deployment"
 
-    $SoftwareUNC = "\\$Server.$DomainName\$ShareName"
+    $BasePath      = "D:\Shares"
+    $SoftwarePath  = "$BasePath\Software"
 
+    $SoftwareUNC   = "\\$Server.$DomainName\Software"
+
+    # =========================
+    # CREATE SOFTWARE FOLDER
+    # =========================
     if (-not (Test-Path $SoftwarePath)) {
         New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
-        Log-Green "Created software folder: $SoftwarePath"
+        Log-Green "Created: $SoftwarePath"
     }
 
-    if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
+    # =========================
+    # CREATE SMB SHARE (IMPORTANT FIX)
+    # =========================
+    if (-not (Get-SmbShare -Name "Software" -ErrorAction SilentlyContinue)) {
 
         New-SmbShare `
-            -Name $ShareName `
+            -Name "Software" `
             -Path $SoftwarePath `
             -FullAccess "Administrators" `
             -ReadAccess "Domain Computers" | Out-Null
 
-        Log-Green "Created software share: $SoftwareUNC"
+        Log-Green "Created Software Share: $SoftwareUNC"
     }
 
+    # =========================
+    # NTFS PERMISSIONS (FIXED CLEAN)
+    # =========================
     icacls $SoftwarePath /inheritance:r | Out-Null
     icacls $SoftwarePath /grant "Administrators:(OI)(CI)F" | Out-Null
     icacls $SoftwarePath /grant "Domain Admins:(OI)(CI)F" | Out-Null
     icacls $SoftwarePath /grant "Domain Computers:(OI)(CI)RX" | Out-Null
 
-    if (-not (Get-ADGroup -Filter "Name -eq '$targetGroup'" -ErrorAction SilentlyContinue)) {
-
+    # =========================
+    # CREATE SECURITY GROUP
+    # =========================
+    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
         New-ADGroup `
-            -Name $targetGroup `
-            -SamAccountName $targetGroup `
+            -Name $GroupName `
             -GroupScope Global `
-            -GroupCategory Security | Out-Null
+            -GroupCategory Security `
+            -Path $DomainDN | Out-Null
 
-        Log-Green "Created security group: $targetGroup"
+        Log-Green "Created group: $GroupName"
     }
 
-    if (-not (Get-GPO -Name $softwareGpoName -ErrorAction SilentlyContinue)) {
+    # =========================
+    # CREATE GPO
+    # =========================
+    $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 
-        New-GPO -Name $softwareGpoName | Out-Null
-        Log-Green "Created GPO: $softwareGpoName"
+    if (-not $gpo) {
+        $gpo = New-GPO -Name $GpoName
+        Log-Green "Created GPO: $GpoName"
     }
 
-    if (-not ((Get-GPInheritance -Target $targetOU).GpoLinks.DisplayName -contains $softwareGpoName)) {
+    # =========================
+    # LINK TO COMPUTER OU (CRITICAL FIX)
+    # =========================
+    $existingLinks = (Get-GPInheritance -Target $ComputerOU).GpoLinks.DisplayName
 
+    if ($existingLinks -notcontains $GpoName) {
         New-GPLink `
-            -Name $softwareGpoName `
-            -Target $targetOU `
+            -Name $GpoName `
+            -Target $ComputerOU `
             -LinkEnabled Yes | Out-Null
 
-        Log-Green "Linked GPO to: $targetOU"
+        Log-Green "Linked GPO to Computers OU"
     }
 
-    Set-GPPermission `
-        -Name $softwareGpoName `
-        -TargetName "Authenticated Users" `
-        -TargetType Group `
-        -PermissionLevel None `
-        -Replace
+    # =========================
+    # CREATE STARTUP INSTALL SCRIPT
+    # =========================
+    $gpoId = $gpo.Id.ToString()
 
-    Set-GPPermission `
-        -Name $softwareGpoName `
-        -TargetName $targetGroup `
-        -TargetType Group `
-        -PermissionLevel GpoApply
+    $startupPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
+
+    if (-not (Test-Path $startupPath)) {
+        New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
+    }
+
+    $installScript = @"
+@echo off
+
+echo Installing software...
+
+msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart
+msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart
+
+exit /b 0
+"@
+
+    $installScript | Out-File "$startupPath\install-software.bat" -Encoding ASCII -Force
+
+    # =========================
+    # REGISTER STARTUP SCRIPT
+    # =========================
+    $scriptsIni = @"
+[Startup]
+0CmdLine=install-software.bat
+0Parameters=
+"@
+
+    $scriptsIni | Out-File "$startupPath\scripts.ini" -Encoding ASCII -Force
+
+    # =========================
+    # SECURITY FILTERING
+    # =========================
+
+    # Remove default restriction
+    Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply
+
+    # Optional: restrict to group (uncomment if needed)
+    # Set-GPPermission -Name $GpoName -TargetName $GroupName -TargetType Group -PermissionLevel GpoApply
+
+    # =========================
+    # DOWNLOAD SOFTWARE
+    # =========================
 
     function Get-Installer {
-        param(
-            [string]$Url,
-            [string]$OutFile
-        )
+        param($Url, $OutFile)
 
         if (-not (Test-Path $OutFile)) {
-
-            try {
-                Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
-                Log-Green "Downloaded: $OutFile"
-            }
-            catch {
-                Log-Red "Failed to download: $Url"
-                Log-Red "Error: $_"
-            }
+            Invoke-WebRequest -Uri $Url -OutFile $OutFile
+            Log-Green "Downloaded: $OutFile"
         }
     }
 
-    Get-Installer `
-        -Url "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" `
-        -OutFile "$SoftwarePath\notepadplusplus.msi"
+    Get-Installer "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" "$SoftwarePath\notepadplusplus.msi"
+    Get-Installer "https://www.7-zip.org/a/7z2409-x64.msi" "$SoftwarePath\7zip.msi"
 
-    Get-Installer `
-        -Url "https://www.7-zip.org/a/7z2409-x64.msi" `
-        -OutFile "$SoftwarePath\7zip.msi"
-
-    $gpo = Get-GPO -Name $softwareGpoName
-
-    $installerList = @(
-        "$SoftwareUNC\notepadplusplus.msi",
-        "$SoftwareUNC\7zip.msi"
-    )
-
-    foreach ($msi in $installerList) {
-
-        if (Test-Path $msi) {
-
-            try {
-
-                $packageName = Split-Path $msi -Leaf
-
-                $gpoPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$($gpo.Id)}"
-
-                $appMgmtPath = "$gpoPath\Machine\Applications"
-
-                if (-not (Test-Path $appMgmtPath)) {
-                    New-Item -ItemType Directory -Path $appMgmtPath -Force | Out-Null
-                }
-
-                $installer = New-Object -ComObject WindowsInstaller.Installer
-                $database = $installer.GetType().InvokeMember(
-                    "OpenDatabase",
-                    "InvokeMethod",
-                    $null,
-                    $installer,
-                    @($msi, 0)
-                )
-
-                Log-Green "Assigned package: $packageName"
-            }
-            catch {
-                Log-Red "Failed adding package: $msi"
-            }
-        }
-    }
+    # =========================
+    # FORCE UPDATE
+    # =========================
+    gpupdate /force
 
     Log-Green ""
-    Log-Green "===== SOFTWARE DEPLOYMENT READY ====="
-    Log-Green "GPO: $softwareGpoName"
-    Log-Green "OU: $targetOU"
-    Log-Green "Group: $targetGroup"
+    Log-Green "====================================="
+    Log-Green " SOFTWARE DEPLOYMENT READY"
+    Log-Green "====================================="
+    Log-Green ""
+    Log-Green "Target OU: $ComputerOU"
+    Log-Green "GPO: $GpoName"
     Log-Green "Share: $SoftwareUNC"
     Log-Green ""
-
-    gpupdate /force
+    Log-Green "Software installs at next reboot"
 }
-
-
-# make all people in a group to apply the drive mapping gpo placed on the user ou which is not linked to any users
