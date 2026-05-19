@@ -642,3 +642,6 @@ foreach (`$installer in `$installers) {
 
     gpupdate /force
 }
+
+
+# make all people in a group to apply the drive mapping gpo placed on the user ou which is not linked to any users
