@@ -671,6 +671,7 @@ $scriptsIniPath = "$scriptFolder\scripts.ini"
 # ==========================================
 # ✅ BUMP GPO VERSION (THIS WAS MISSING)
 # ==========================================
+
 $gptIni = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoID}\gpt.ini"
 
 if (-not (Test-Path $gptIni)) {
@@ -678,13 +679,23 @@ if (-not (Test-Path $gptIni)) {
 [General]
 Version=1
 "@ | Out-File $gptIni -Encoding ASCII
-} else {
-    $content = Get-Content $gptIni
+}
+else {
+    $content = Get-Content $gptIni -Raw
+
     if ($content -match "Version=(\d+)") {
-        $version = [int]$Matches[1] + 1
-        $content -replace "Version=\d+", "Version=$version" | Set-Content $gptIni
+        $currentVersion = [int]$Matches[1]
+        $newVersion = $currentVersion + 1
+
+        $content = $content -replace "Version=\d+", "Version=$newVersion"
+        $content | Set-Content $gptIni
+    }
+    else {
+        # fallback if Version line missing
+        Add-Content $gptIni "`nVersion=1"
     }
 }
+
 
 Log-Green "Startup script registered CORRECTLY (gpt.ini updated)"
 
