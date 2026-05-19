@@ -525,9 +525,7 @@ Write-Host "All users in LAB OU tree will get:"
 Write-Host "$DriveLetter`: -> $UNCPath"
 Write-Host ""
 
-# ==========================================
-# SOFTWARE DEPLOYMENT (WORKING VERSION)
-# ==========================================
+
 }
 
 if (Confirm-Step "set up software deployment via GPO?") {
@@ -535,243 +533,136 @@ if (Confirm-Step "set up software deployment via GPO?") {
     Import-Module ActiveDirectory
     Import-Module GroupPolicy
 
-    # =========================
-    # DOMAIN INFO
-    # =========================
+    # ===== DOMAIN INFO =====
     $Domain     = Get-ADDomain
     $DomainDN   = $Domain.DistinguishedName
     $DomainName = $Domain.DNSRoot
     $Server     = $env:COMPUTERNAME
 
-    # =========================
-    # CONFIG
-    # =========================
-    $RootOU        = "Lab"
-    $LabOUPath     = "OU=$RootOU,$DomainDN"
-    $ComputerOU    = "OU=Computers,OU=$RootOU,$DomainDN"
+    # ===== CONFIG =====
+    $RootOU       = "Lab"
+    $LabOU        = "OU=$RootOU,$DomainDN"
+    $ComputerOU   = "OU=Computers,$LabOU"
 
-    $GpoName       = "Software-Deployment"
-    $GroupName     = "GG-Software-Deployment"
+    $GpoName      = "Software-Deployment"
 
-    $BasePath      = "D:\Shares"
-    $SoftwarePath  = "$BasePath\Software"
+    $BasePath     = "D:\Shares"
+    $SoftwarePath = "$BasePath\Software"
+    $SoftwareUNC  = "\\$Server.$DomainName\Software"
 
-    $SoftwareUNC   = "\\$Server.$DomainName\Software"
+    # ==========================================
+    # ✅ ENSURE COMPUTERS GO INTO LAB OU
+    # ==========================================
+    redircmp $ComputerOU
+    Log-Green "Default computer location set to Lab OU"
 
-    # =========================
-    # CREATE SOFTWARE FOLDER
-    # =========================
-    if (-not (Test-Path $SoftwarePath)) {
-        New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
-        Log-Green "Created: $SoftwarePath"
+    # Move existing computers (IMPORTANT)
+    Get-ADComputer -Filter * | ForEach-Object {
+        try { Move-ADObject $_.DistinguishedName -TargetPath $ComputerOU -ErrorAction Stop } catch {}
     }
 
-    # =========================
-    # CREATE SMB SHARE (IMPORTANT FIX)
-    # =========================
-    if (-not (Get-SmbShare -Name "Software" -ErrorAction SilentlyContinue)) {
+    # ==========================================
+    # ✅ CREATE SOFTWARE SHARE
+    # ==========================================
+    New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
 
-        New-SmbShare `
-            -Name "Software" `
-            -Path $SoftwarePath `
+    if (-not (Get-SmbShare -Name "Software" -ErrorAction SilentlyContinue)) {
+        New-SmbShare -Name "Software" -Path $SoftwarePath `
             -FullAccess "Administrators" `
             -ReadAccess "Domain Computers" | Out-Null
-
-        Log-Green "Created Software Share: $SoftwareUNC"
     }
 
-    # =========================
-    # NTFS PERMISSIONS (FIXED CLEAN)
-    # =========================
     icacls $SoftwarePath /inheritance:r | Out-Null
     icacls $SoftwarePath /grant "Administrators:(OI)(CI)F" | Out-Null
-    icacls $SoftwarePath /grant "Domain Admins:(OI)(CI)F" | Out-Null
     icacls $SoftwarePath /grant "Domain Computers:(OI)(CI)RX" | Out-Null
 
-    # =========================
-    # CREATE SECURITY GROUP
-    # =========================
-    if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
-        New-ADGroup `
-            -Name $GroupName `
-            -GroupScope Global `
-            -GroupCategory Security `
-            -Path $DomainDN | Out-Null
+    Log-Green "Software share ready"
 
-        Log-Green "Created group: $GroupName"
-    }
+    # ==========================================
+    # ✅ DOWNLOAD SOFTWARE
+    # ==========================================
+    Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2409-x64.msi" `
+        -OutFile "$SoftwarePath\7zip.msi" -UseBasicParsing
 
-    # =========================
-    # CREATE GPO
-    # =========================
+    Invoke-WebRequest -Uri "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" `
+        -OutFile "$SoftwarePath\npp.msi" -UseBasicParsing
+
+    Log-Green "Software downloaded"
+
+    # ==========================================
+    # ✅ CREATE GPO + LINK
+    # ==========================================
     $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
+    if (-not $gpo) { $gpo = New-GPO -Name $GpoName }
 
-    if (-not $gpo) {
-        $gpo = New-GPO -Name $GpoName
-        Log-Green "Created GPO: $GpoName"
+    if (-not ((Get-GPInheritance -Target $LabOU).GpoLinks.DisplayName -contains $GpoName)) {
+        New-GPLink -Name $GpoName -Target $LabOU -LinkEnabled Yes | Out-Null
     }
 
-    # =========================
-    # LINK TO LAB ROOT OU (APPLIES TO ALL)
-    # =========================
-    $existingLinks = (Get-GPInheritance -Target $LabOUPath).GpoLinks.DisplayName
+    # IMPORTANT: ALLOW ALL COMPUTERS
+    Set-GPPermission -Name $GpoName `
+        -TargetName "Authenticated Users" `
+        -TargetType Group `
+        -PermissionLevel GpoApply -Replace
 
-    if ($existingLinks -notcontains $GpoName) {
-        New-GPLink `
-            -Name $GpoName `
-            -Target $LabOUPath `
-            -LinkEnabled Yes | Out-Null
+    Log-Green "GPO ready and linked"
 
-        Log-Green "Linked GPO to Lab root OU (affects all Lab objects)"
-    }
+    # ==========================================
+    # ✅ CREATE STARTUP SCRIPT (PROPER WAY)
+    # ==========================================
+    $gpoID = $gpo.Id.ToString()
+    $scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoID}\Machine\Scripts\Startup"
 
-# ==========================================
-# CREATE AUTO MSI INSTALLER SCRIPT
-# ==========================================
+    New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
 
-$gpoId = $gpo.Id.ToString()
+    $scriptFile = "$scriptFolder\install.ps1"
 
-$startupFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
+@"
+Start-Sleep 30
 
-if (-not (Test-Path $startupFolder)) {
-    New-Item -ItemType Directory -Path $startupFolder -Force | Out-Null
+\$share = "$SoftwareUNC"
+\$log   = "C:\Windows\Temp\install.log"
+
+Add-Content \$log "`$(Get-Date): START"
+
+if (-not (Test-Path \$share)) {
+    Add-Content \$log "Share not ready"
+    exit
 }
 
-# Create PowerShell script that auto-discovers and installs all MSI files
-$psScriptName = "Install-AllMSI.ps1"
+Get-ChildItem \$share -Filter *.msi | ForEach-Object {
 
-$InstallScript = @"
-# Auto-install all MSI files from Software share
-`$SoftwareShare = "\\$Server.$DomainName\Software"
-`$LogPath = "C:\Windows\Temp\SoftwareInstall.log"
+    \$file = \$_.FullName
+    \$name = \$_.Name
 
-# Ensure share is accessible
-if (-not (Test-Path `$SoftwareShare)) {
-    Add-Content `$LogPath -Value "`$(Get-Date): Share not accessible: `$SoftwareShare"
-    exit 1
+    Add-Content \$log "Installing \$name"
+
+    Start-Process msiexec.exe -ArgumentList "/i `"\$file`" /qn /norestart" -Wait
+
+    Add-Content \$log "Done \$name"
 }
 
-# Find all MSI files
-`$msiFiles = Get-ChildItem -Path `$SoftwareShare -Filter "*.msi" -ErrorAction SilentlyContinue
+Add-Content \$log "FINISHED"
+"@ | Out-File $scriptFile -Encoding UTF8 -Force
 
-if (`$msiFiles.Count -eq 0) {
-    Add-Content `$LogPath -Value "`$(Get-Date): No MSI files found in `$SoftwareShare"
-    exit 0
-}
+    # ✅ THIS IS THE CRITICAL FIX (REAL REGISTRATION)
+    Set-GPStartupScript -ScriptName "install.ps1" `
+        -GpoName $GpoName `
+        -ScriptParameters "" `
+        -ScriptType PowerShell
 
-# Install each MSI silently
-foreach (`$msi in `$msiFiles) {
-    `$msiPath = `$msi.FullName
-    `$msiName = `$msi.Name
-    
-    # Skip if already installed (basic check)
-    `$logFile = "`$LogPath\`$(`$msiName).log"
-    
-    Add-Content `$LogPath -Value "`$(Get-Date): Installing `$msiName..."
-    
-    try {
-        `$process = Start-Process -FilePath "msiexec.exe" `
-            -ArgumentList "/i `"$msiPath`" /qn /norestart /l*v `"C:\Windows\Temp\`$msiName.log`"" `
-            -Wait -PassThru
-        
-        Add-Content `$LogPath -Value "`$(Get-Date): `$msiName installed - Exit Code: `$(`$process.ExitCode)"
-    }
-    catch {
-        Add-Content `$LogPath -Value "`$(Get-Date): ERROR installing `$msiName - `$_"
-    }
-}
+    Log-Green "Startup script registered CORRECTLY"
 
-Add-Content `$LogPath -Value "`$(Get-Date): All available MSI installations completed"
-exit 0
-"@
+    # ==========================================
+    # ✅ FINAL
+    # ==========================================
+    gpupdate /force
 
-$InstallScript | Out-File "$startupFolder\$psScriptName" -Encoding UTF8 -Force
-
-Log-Green "PowerShell installer script created: $psScriptName"
-
-# ==========================================
-# CREATE BATCH WRAPPER (for GPO compatibility)
-# ==========================================
-
-$batchScriptName = "Run-Installer.bat"
-
-$BatchScript = @"
-@echo off
-REM Wrapper to execute PowerShell startup script
-powershell.exe -ExecutionPolicy Bypass -File "$startupFolder\$psScriptName"
-"@
-
-$BatchScript | Out-File "$startupFolder\$batchScriptName" -Encoding ASCII -Force
-
-Log-Green "Batch wrapper created: $batchScriptName"
-
-# ==========================================
-# REGISTER STARTUP SCRIPT WITH GPO
-# ==========================================
-
-$scriptsIni = @"
-[Startup]
-0CmdLine=$batchScriptName
-0Parameters=
-"@
-
-$scriptsIni | Out-File "$startupFolder\scripts.ini" -Encoding ASCII -Force
-
-Log-Green "Registered startup script in GPO"
-
-# ==========================================
-# SET SECURITY FILTERING
-# ==========================================
-
-Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply -Replace
-
-Log-Green "Security filtering applied to Domain Computers"
-
-# ==========================================
-# DOWNLOAD SOFTWARE TO SHARE
-# ==========================================
-
-function Get-Installer {
-    param($Url, $OutFile)
-
-    if (-not (Test-Path $OutFile)) {
-        try {
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
-            Log-Green "Downloaded: $(Split-Path $OutFile -Leaf)"
-        }
-        catch {
-            Log-Red "Failed to download: $Url - $_"
-        }
-    } else {
-        Log-Green "Already exists: $(Split-Path $OutFile -Leaf)"
-    }
-}
-
-Get-Installer "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.9.5/npp.8.9.5.Installer.x64.msi" "$SoftwarePath\notepadplusplus.msi"
-Get-Installer "https://www.7-zip.org/a/7z2409-x64.msi" "$SoftwarePath\7zip.msi"
-
-# ==========================================
-# FORCE GPO UPDATE
-# ==========================================
-
-gpupdate /force
-
-Log-Green ""
-Log-Green "====================================="
-Log-Green " SOFTWARE DEPLOYMENT CONFIGURED"
-Log-Green "====================================="
-Log-Green ""
-Log-Green "Target OU: $LabOUPath (Lab root)"
-Log-Green "GPO: $GpoName"
-Log-Green "Software Share: $SoftwareUNC"
-Log-Green ""
-Log-Green "Auto-installer script will:"
-Log-Green "  1. Discover all .msi files in $SoftwareUNC"
-Log-Green "  2. Install each silently at computer startup"
-Log-Green "  3. Log results to C:\Windows\Temp\SoftwareInstall.log"
-Log-Green ""
-Log-Green "Affects all computers and users under Lab OU"
-Log-Green "Software installs at next system reboot"
-Log-Green ""
-
+    Log-Green ""
+    Log-Green "================================"
+    Log-Green " SOFTWARE DEPLOYMENT READY"
+    Log-Green "================================"
+    Log-Green ""
+    Log-Green "Clients will install software on NEXT REBOOT"
+    Log-Green "Check log: C:\Windows\Temp\install.log"
 }
