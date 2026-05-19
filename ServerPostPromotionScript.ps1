@@ -408,194 +408,121 @@ if (Confirm-Step "set up shared folders and permissions?") {
 
     Log-Green "Shared folders and permissions configured"
 }
-# ===== AUTO DRIVE MAPPING VIA GPO (WORKING METHOD) =====
+
+# ==========================================
+# AUTO DRIVE MAPPING VIA GPO (LAB STRUCTURE)
+# ==========================================
+
 Import-Module ActiveDirectory
 Import-Module GroupPolicy
 
-# =========================
-# CONFIG
-# =========================
 $DriveLetter = "W"
 $ShareName   = "Shares"
-$SharePath   = "C:\Shares"
-$GpoName     = "DriveMap-Users"
 
-# =========================
-# DOMAIN INFO
-# =========================
-$Domain      = Get-ADDomain
-$DomainName  = $Domain.DNSRoot
-$DomainDN    = $Domain.DistinguishedName
+$Domain     = Get-ADDomain
+$DomainName = $Domain.DNSRoot
+$DomainDN   = $Domain.DistinguishedName
 
-# FQDN of server
+$RootOU     = "Lab"
+$RootPath   = "OU=$RootOU,$DomainDN"
+
+$GpoName    = "DriveMap-Lab-Users"
+
+# Server UNC path
 $ServerFQDN = "$($env:COMPUTERNAME).$DomainName"
+$UNCPath    = "\\$ServerFQDN\$ShareName"
 
-# UNC path users will map
-$UNCPath = "\\$ServerFQDN\$ShareName"
+Write-Host "Setting up drive mapping..." -ForegroundColor Cyan
+Write-Host "Target: $UNCPath" -ForegroundColor Cyan
 
-Write-Host ""
-Write-Host "====================================="
-Write-Host " DRIVE MAPPING SETUP"
-Write-Host "====================================="
-Write-Host ""
+# ==========================================
+# CREATE / GET GPO
+# ==========================================
 
-# =========================
-# CREATE SHARE FOLDER
-# =========================
-if (-not (Test-Path $SharePath)) {
-    New-Item -ItemType Directory -Path $SharePath -Force | Out-Null
-    Write-Host "Created folder: $SharePath" -ForegroundColor Green
-}
-else {
-    Write-Host "Folder already exists" -ForegroundColor Yellow
-}
-
-# =========================
-# NTFS PERMISSIONS
-# =========================
-$acl = Get-Acl $SharePath
-
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-    "Domain Users",
-    "Modify",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
-)
-
-$acl.SetAccessRule($rule)
-Set-Acl -Path $SharePath -AclObject $acl
-
-Write-Host "Configured NTFS permissions" -ForegroundColor Green
-
-# =========================
-# SMB SHARE
-# =========================
-if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
-
-    New-SmbShare `
-        -Name $ShareName `
-        -Path $SharePath `
-        -FullAccess "Domain Admins" `
-        -ChangeAccess "Domain Users" | Out-Null
-
-    Write-Host "Created SMB Share: $ShareName" -ForegroundColor Green
-}
-else {
-    Write-Host "SMB Share already exists" -ForegroundColor Yellow
-}
-
-# =========================
-# CREATE GPO
-# =========================
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 
 if (-not $gpo) {
     $gpo = New-GPO -Name $GpoName
-    Write-Host "Created GPO: $GpoName" -ForegroundColor Green
+    Log-Green "Created GPO: $GpoName"
 }
 else {
-    Write-Host "GPO already exists" -ForegroundColor Yellow
+    Log-Green "GPO already exists"
 }
 
-# =========================
-# LINK GPO TO USERS OU
-# =========================
-$usersOU = Get-ADOrganizationalUnit `
-    -Filter "Name -eq 'Users'" `
-    -SearchBase $DomainDN `
-    -ErrorAction SilentlyContinue
+# ==========================================
+# LINK GPO TO ROOT LAB OU (IMPORTANT FIX)
+# ==========================================
 
-if ($usersOU) {
+$existingLinks = (Get-GPInheritance -Target $RootPath).GpoLinks.DisplayName
 
-    $existingLinks = (Get-GPInheritance -Target $usersOU.DistinguishedName).GpoLinks.DisplayName
-
-    if ($existingLinks -notcontains $GpoName) {
-
-        New-GPLink `
-            -Name $GpoName `
-            -Target $usersOU.DistinguishedName `
-            -LinkEnabled Yes | Out-Null
-
-        Write-Host "Linked GPO to Users OU" -ForegroundColor Green
-    }
-    else {
-        Write-Host "GPO already linked" -ForegroundColor Yellow
-    }
+if ($existingLinks -notcontains $GpoName) {
+    New-GPLink -Name $GpoName -Target $RootPath -LinkEnabled Yes | Out-Null
+    Log-Green "Linked GPO to LAB root OU"
 }
 else {
-    Write-Host "Users OU not found" -ForegroundColor Red
-    exit
+    Log-Green "GPO already linked to LAB OU"
 }
 
-# =========================
-# CREATE DRIVE MAP XML
-# =========================
-$gpoGuid = $gpo.Id.ToString()
+# ==========================================
+# SECURITY FILTERING (IMPORTANT)
+# ==========================================
 
-$prefPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoGuid}\User\Preferences\Drives"
+Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply
 
-if (-not (Test-Path $prefPath)) {
-    New-Item -ItemType Directory -Path $prefPath -Force | Out-Null
-}
+# ==========================================
+# DRIVE MAPPING (GROUP POLICY PREFERENCES METHOD)
+# ==========================================
 
-$driveXml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">
-    <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}"
-           name="$DriveLetter"
-           status="$DriveLetter"
-           image="2"
-           changed="2026-05-19 12:00:00"
-           uid="{F5F6A1B2-1111-2222-3333-444455556666}">
-        <Properties action="U"
-                    thisDrive="SHOW"
-                    allDrives="NOCHANGE"
-                    userName=""
-                    path="$UNCPath"
-                    label="$ShareName"
-                    persistent="1"
-                    useLetter="1"
-                    letter="$DriveLetter"/>
-    </Drive>
-</Drives>
-"@
+# This is the correct GPP registry-based mapping method
 
-$xmlPath = "$prefPath\Drives.xml"
+Set-GPRegistryValue `
+    -Name $GpoName `
+    -Key "HKCU\Network\$DriveLetter" `
+    -ValueName "RemotePath" `
+    -Type String `
+    -Value $UNCPath
 
-$driveXml | Out-File $xmlPath -Encoding UTF8 -Force
+Set-GPRegistryValue `
+    -Name $GpoName `
+    -Key "HKCU\Network\$DriveLetter" `
+    -ValueName "UserName" `
+    -Type String `
+    -Value ""
 
-Write-Host "Created Drive Mapping Preferences XML" -ForegroundColor Green
+Set-GPRegistryValue `
+    -Name $GpoName `
+    -Key "HKCU\Network\$DriveLetter" `
+    -ValueName "ProviderName" `
+    -Type String `
+    -Value "Microsoft Windows Network"
 
-# =========================
-# ENABLE GPP EXTENSION
-# =========================
-$gptIniPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoGuid}\gpt.ini"
+Set-GPRegistryValue `
+    -Name $GpoName `
+    -Key "HKCU\Network\$DriveLetter" `
+    -ValueName "ConnectionType" `
+    -Type DWord `
+    -Value 1
 
-if (Test-Path $gptIniPath) {
+Set-GPRegistryValue `
+    -Name $GpoName `
+    -Key "HKCU\Network\$DriveLetter" `
+    -ValueName "DeferFlags" `
+    -Type DWord `
+    -Value 4
 
-    $content = Get-Content $gptIniPath
+# ==========================================
+# FORCE UPDATE
+# ==========================================
 
-    if ($content -notmatch "UserVersion") {
-        Add-Content $gptIniPath "UserVersion=1"
-    }
-}
-
-# =========================
-# FORCE GPUPDATE
-# =========================
 gpupdate /force
 
 Write-Host ""
-Write-Host "====================================="
-Write-Host " SETUP COMPLETE"
-Write-Host "====================================="
+Write-Host "========================================="
+Write-Host " DRIVE MAPPING COMPLETE"
+Write-Host "========================================="
 Write-Host ""
-Write-Host "Mapped Drive:"
-Write-Host "  $DriveLetter`: = $UNCPath"
-Write-Host ""
-Write-Host "All domain users will automatically"
-Write-Host "receive the mapped drive at logon."
+Write-Host "All users in LAB OU tree will get:"
+Write-Host "$DriveLetter`: -> $UNCPath"
 Write-Host ""
 
 if (Confirm-Step "set up software deployment via GPO?") {
