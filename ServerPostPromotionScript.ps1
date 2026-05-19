@@ -623,29 +623,35 @@ if (Confirm-Step "set up software deployment via GPO?") {
         Log-Green "Linked GPO to Computers OU"
     }
 
-    # =========================
-    # CREATE STARTUP INSTALL SCRIPT
-    # =========================
-    $gpoId = $gpo.Id.ToString()
+# ==========================================
+# CREATE REAL STARTUP SCRIPT (FIXED METHOD)
+# ==========================================
 
-    $startupPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
+$gpoId = $gpo.Id.ToString()
 
-    if (-not (Test-Path $startupPath)) {
-        New-Item -ItemType Directory -Path $startupPath -Force | Out-Null
-    }
+$scriptName = "install-software.bat"
 
-    $installScript = @"
+$startupFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoId}\Machine\Scripts\Startup"
+
+if (-not (Test-Path $startupFolder)) {
+    New-Item -ItemType Directory -Path $startupFolder -Force | Out-Null
+}
+
+# FIX: use COMPUTER NAME, not server browsing alias
+$InstallScript = @"
 @echo off
-
 echo Installing software...
 
-msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart
-msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart
+msiexec /i "\\$Server.$DomainName\Software\notepadplusplus.msi" /qn /norestart /log C:\Windows\Temp\npp.log
+msiexec /i "\\$Server.$DomainName\Software\7zip.msi" /qn /norestart /log C:\Windows\Temp\7zip.log
 
+echo Done.
 exit /b 0
 "@
 
-    $installScript | Out-File "$startupPath\install-software.bat" -Encoding ASCII -Force
+$InstallScript | Out-File "$startupFolder\$scriptName" -Encoding ASCII -Force
+
+Log-Green "Startup script created"
 
     # =========================
     # REGISTER STARTUP SCRIPT
@@ -656,7 +662,7 @@ exit /b 0
 0Parameters=
 "@
 
-    $scriptsIni | Out-File "$startupPath\scripts.ini" -Encoding ASCII -Force
+    $scriptsIni | Out-File "$startupFolder\scripts.ini" -Encoding ASCII -Force
 
     # =========================
     # SECURITY FILTERING
