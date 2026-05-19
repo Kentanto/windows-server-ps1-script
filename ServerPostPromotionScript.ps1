@@ -409,82 +409,194 @@ if (Confirm-Step "set up shared folders and permissions?") {
     Log-Green "Shared folders and permissions configured"
 }
 # ===== AUTO DRIVE MAPPING VIA GPO (WORKING METHOD) =====
+Import-Module ActiveDirectory
+Import-Module GroupPolicy
 
-if (Confirm-Step "configure automatic drive mapping?") {
-    
-    $Domain = Get-ADDomain
-    $DomainDN = $Domain.DistinguishedName
-    $DomainName = $Domain.DNSRoot
-    $Server = $env:COMPUTERNAME
+# =========================
+# CONFIG
+# =========================
+$DriveLetter = "W"
+$ShareName   = "Shares"
+$SharePath   = "C:\Shares"
+$GpoName     = "DriveMap-Users"
 
-    # ===== CREATE GPO FOR DRIVE MAPPING =====
-    $driveMapGpoName = "DriveMap-Logon"
+# =========================
+# DOMAIN INFO
+# =========================
+$Domain      = Get-ADDomain
+$DomainName  = $Domain.DNSRoot
+$DomainDN    = $Domain.DistinguishedName
 
-    if (-not (Get-GPO -Name $driveMapGpoName -ErrorAction SilentlyContinue)) {
-        New-GPO -Name $driveMapGpoName | Out-Null
-        Log-Green "Created GPO: $driveMapGpoName"
-    }
+# FQDN of server
+$ServerFQDN = "$($env:COMPUTERNAME).$DomainName"
 
-    # Link GPO to Users OU
-    $usersOU = (Get-ADOrganizationalUnit -Filter "Name -eq 'Users'" -SearchBase "$rootPath" -ErrorAction SilentlyContinue).DistinguishedName
-    
-    if ($usersOU) {
-        if (-not ((Get-GPInheritance -Target $usersOU -ErrorAction SilentlyContinue).GpoLinks.DisplayName -contains $driveMapGpoName)) {
-            New-GPLink -Name $driveMapGpoName -Target $usersOU -LinkEnabled Yes | Out-Null
-            Log-Green "Linked GPO to Users OU"
-        } else {
-            Log-Green "GPO already linked to Users OU"
-        }
-    } else {
-        Log-Red "Users OU not found"
-        return
-    }
+# UNC path users will map
+$UNCPath = "\\$ServerFQDN\$ShareName"
 
-    # ===== CREATE DRIVE MAPPING SCRIPT IN GPO =====
-    $driveMapGpoId = (Get-GPO $driveMapGpoName).Id
-    $gpoScriptPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$driveMapGpoId}\User\Scripts\Logon"
+Write-Host ""
+Write-Host "====================================="
+Write-Host " DRIVE MAPPING SETUP"
+Write-Host "====================================="
+Write-Host ""
 
-    if (-not (Test-Path $gpoScriptPath)) {
-        New-Item -ItemType Directory -Path $gpoScriptPath -Force | Out-Null
-        Log-Green "Created GPO logon script folder"
-    }
-
-    # Create drive mapping script (batch file for reliability)
-    $driveMapScript = @"
-@echo off
-REM Delete existing W: mapping
-net use W: /delete /yes >nul 2>&1
-
-REM Map W: drive to Shares root folder
-net use W: \\$Server\Shares /persistent:no >nul 2>&1
-
-exit /b 0
-"@
-
-    $driveMapFile = "$gpoScriptPath\map-drives.bat"
-    $driveMapScript | Out-File $driveMapFile -Encoding ASCII -Force
-    Log-Green "Deployed drive mapping script to GPO"
-
-    # ===== CREATE scripts.ini TO REGISTER THE SCRIPT =====
-    $scriptsIni = @"
-[Logon]
-0CmdLine=map-drives.bat
-"@
-
-    $scriptsIni | Out-File "$gpoScriptPath\scripts.ini" -Encoding ASCII -Force
-    Log-Green "Created scripts.ini for GPO logon script"
-
-    Log-Green ""
-    Log-Green "===== DRIVE MAPPING READY ====="
-    Log-Green "GPO: $driveMapGpoName is linked to Users OU"
-    Log-Green "Script: $driveMapFile"
-    Log-Green "Users will have:"
-    Log-Green "  W: = \\$Server\Shares (all shared folders)"
-    Log-Green ""
-
-    gpupdate /force
-    Log-Green "Done - users will see drives mapped on next logon"
+# =========================
+# CREATE SHARE FOLDER
+# =========================
+if (-not (Test-Path $SharePath)) {
+    New-Item -ItemType Directory -Path $SharePath -Force | Out-Null
+    Write-Host "Created folder: $SharePath" -ForegroundColor Green
 }
+else {
+    Write-Host "Folder already exists" -ForegroundColor Yellow
+}
+
+# =========================
+# NTFS PERMISSIONS
+# =========================
+$acl = Get-Acl $SharePath
+
+$rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    "Domain Users",
+    "Modify",
+    "ContainerInherit,ObjectInherit",
+    "None",
+    "Allow"
+)
+
+$acl.SetAccessRule($rule)
+Set-Acl -Path $SharePath -AclObject $acl
+
+Write-Host "Configured NTFS permissions" -ForegroundColor Green
+
+# =========================
+# SMB SHARE
+# =========================
+if (-not (Get-SmbShare -Name $ShareName -ErrorAction SilentlyContinue)) {
+
+    New-SmbShare `
+        -Name $ShareName `
+        -Path $SharePath `
+        -FullAccess "Domain Admins" `
+        -ChangeAccess "Domain Users" | Out-Null
+
+    Write-Host "Created SMB Share: $ShareName" -ForegroundColor Green
+}
+else {
+    Write-Host "SMB Share already exists" -ForegroundColor Yellow
+}
+
+# =========================
+# CREATE GPO
+# =========================
+$gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
+
+if (-not $gpo) {
+    $gpo = New-GPO -Name $GpoName
+    Write-Host "Created GPO: $GpoName" -ForegroundColor Green
+}
+else {
+    Write-Host "GPO already exists" -ForegroundColor Yellow
+}
+
+# =========================
+# LINK GPO TO USERS OU
+# =========================
+$usersOU = Get-ADOrganizationalUnit `
+    -Filter "Name -eq 'Users'" `
+    -SearchBase $DomainDN `
+    -ErrorAction SilentlyContinue
+
+if ($usersOU) {
+
+    $existingLinks = (Get-GPInheritance -Target $usersOU.DistinguishedName).GpoLinks.DisplayName
+
+    if ($existingLinks -notcontains $GpoName) {
+
+        New-GPLink `
+            -Name $GpoName `
+            -Target $usersOU.DistinguishedName `
+            -LinkEnabled Yes | Out-Null
+
+        Write-Host "Linked GPO to Users OU" -ForegroundColor Green
+    }
+    else {
+        Write-Host "GPO already linked" -ForegroundColor Yellow
+    }
+}
+else {
+    Write-Host "Users OU not found" -ForegroundColor Red
+    exit
+}
+
+# =========================
+# CREATE DRIVE MAP XML
+# =========================
+$gpoGuid = $gpo.Id.ToString()
+
+$prefPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoGuid}\User\Preferences\Drives"
+
+if (-not (Test-Path $prefPath)) {
+    New-Item -ItemType Directory -Path $prefPath -Force | Out-Null
+}
+
+$driveXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Drives clsid="{8FDDCC1A-0C3C-43cd-A6B4-71A6DF20DA8C}">
+    <Drive clsid="{935D1B74-9CB8-4e3c-9914-7DD559B7A417}"
+           name="$DriveLetter"
+           status="$DriveLetter"
+           image="2"
+           changed="2026-05-19 12:00:00"
+           uid="{F5F6A1B2-1111-2222-3333-444455556666}">
+        <Properties action="U"
+                    thisDrive="SHOW"
+                    allDrives="NOCHANGE"
+                    userName=""
+                    path="$UNCPath"
+                    label="$ShareName"
+                    persistent="1"
+                    useLetter="1"
+                    letter="$DriveLetter"/>
+    </Drive>
+</Drives>
+"@
+
+$xmlPath = "$prefPath\Drives.xml"
+
+$driveXml | Out-File $xmlPath -Encoding UTF8 -Force
+
+Write-Host "Created Drive Mapping Preferences XML" -ForegroundColor Green
+
+# =========================
+# ENABLE GPP EXTENSION
+# =========================
+$gptIniPath = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoGuid}\gpt.ini"
+
+if (Test-Path $gptIniPath) {
+
+    $content = Get-Content $gptIniPath
+
+    if ($content -notmatch "UserVersion") {
+        Add-Content $gptIniPath "UserVersion=1"
+    }
+}
+
+# =========================
+# FORCE GPUPDATE
+# =========================
+gpupdate /force
+
+Write-Host ""
+Write-Host "====================================="
+Write-Host " SETUP COMPLETE"
+Write-Host "====================================="
+Write-Host ""
+Write-Host "Mapped Drive:"
+Write-Host "  $DriveLetter`: = $UNCPath"
+Write-Host ""
+Write-Host "All domain users will automatically"
+Write-Host "receive the mapped drive at logon."
+Write-Host ""
 
 if (Confirm-Step "set up software deployment via GPO?") {
 
