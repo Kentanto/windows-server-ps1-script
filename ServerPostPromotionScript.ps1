@@ -739,8 +739,6 @@ if (Confirm-Step "create IIS website?") {
 
     Get-ChildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-hildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
     $html = @"
 <!DOCTYPE html>
 <html lang="no">
