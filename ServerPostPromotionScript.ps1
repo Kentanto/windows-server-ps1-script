@@ -704,3 +704,184 @@ Log-Green "Startup script registered CORRECTLY (gpt.ini updated)"
 # ==========================================
 gpupdate /force
 }
+
+if (Confirm-Step "create IIS website?") {
+
+    Import-Module WebAdministration
+
+    $sitePath = "C:\inetpub\wwwroot"
+
+    if (-not (Test-Path $sitePath)) {
+        New-Item -ItemType Directory -Path $sitePath -Force | Out-Null
+    }
+
+    # CLEAR EXISTING CONTENT
+    Get-ChildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    $html = @"
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <title>Kriseberedskap AS</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="hero">
+        <h1>Welcome to Kriseberedaskap AS, her er vi alle F.Orebredt.</h1>
+
+        <div class="buttons">
+            <button>Om oss</button>
+            <button>Tjenester</button>
+            <button>Kontakt</button>
+        </div>
+    </div>
+
+    <div class="gallery">
+        <img src="image1.png">
+        <img src="image2.png">
+        <img src="image3.png">
+        <img src="image4.png">
+    </div>
+
+</body>
+</html>
+"@
+
+    $css = @"
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: url('image1.png') no-repeat center center fixed;
+    background-size: cover;
+    color: white;
+}
+
+.hero {
+    text-align: center;
+    padding: 80px 20px;
+    background: rgba(0,0,0,0.6);
+}
+
+.buttons button {
+    margin: 10px;
+    padding: 12px 20px;
+    border: none;
+    cursor: pointer;
+    background: #1e90ff;
+    color: white;
+    border-radius: 6px;
+}
+
+.buttons button:hover {
+    background: #0f78d1;
+}
+
+.gallery {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px;
+}
+
+.gallery img {
+    width: 150px;
+    height: auto;
+    border-radius: 8px;
+    border: 2px solid white;
+}
+"@
+
+    Set-Content -Path "$sitePath\index.html" -Value $html -Encoding UTF8
+    Set-Content -Path "$sitePath\style.css" -Value $css -Encoding UTF8
+
+
+    $images = @(
+        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image1.png",
+        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image2.png",
+        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image3.png",
+        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image4.png"
+    )
+
+    foreach ($img in $images) {
+
+        $fileName = Split-Path $img -Leaf
+        $outPath = "$sitePath\$fileName"
+
+        if (-not (Test-Path $outPath)) {
+            Invoke-WebRequest -Uri $img -OutFile $outPath
+        }
+    }
+
+    Start-Service W3SVC -ErrorAction SilentlyContinue
+    iisreset | Out-Null
+
+    Log-Green "Clean IIS site deployed to http://localhost"
+}
+
+if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
+
+    Import-Module GroupPolicy
+    Import-Module ActiveDirectory
+
+    $domain = Get-ADDomain
+    $domainName = $domain.DNSRoot
+    $domainDN = $domain.DistinguishedName
+
+    $gpoName = "Force-Global-Wallpaper"
+
+    $wallDir = "\\$domainName\SYSVOL\$domainName\scripts\Wallpapers"
+
+    if (-not (Test-Path $wallDir)) {
+        New-Item -ItemType Directory -Path $wallDir -Force | Out-Null
+    }
+
+    $images = @(
+        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/wallpaper.jpg"
+    )
+
+    foreach ($img in $images) {
+
+        $file = Split-Path $img -Leaf
+        $out = "$wallDir\$file"
+
+        if (-not (Test-Path $out)) {
+            Invoke-WebRequest -Uri $img -OutFile $out
+        }
+    }
+
+    if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
+        New-GPO -Name $gpoName | Out-Null
+    }
+
+    $wallpaperPath = "\\$domainName\SYSVOL\$domainName\scripts\Wallpapers\wallpaper.jpg"
+
+    Set-GPRegistryValue -Name $gpoName `
+        -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
+        -ValueName "Wallpaper" `
+        -Type String `
+        -Value $wallpaperPath
+
+    Set-GPRegistryValue -Name $gpoName `
+        -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
+        -ValueName "WallpaperStyle" `
+        -Type String `
+        -Value "2"
+
+    Set-GPRegistryValue -Name $gpoName `
+        -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop" `
+        -ValueName "NoChangingWallPaper" `
+        -Type DWord `
+        -Value 1
+
+    $existing = (Get-GPInheritance -Target $domainDN).GpoLinks.DisplayName
+
+    if ($existing -notcontains $gpoName) {
+        New-GPLink -Name $gpoName -Target $domainDN -LinkEnabled Yes | Out-Null
+    }
+
+    gpupdate /force
+
+    Log-Green "Wallpaper GPO deployed to entire domain"
+}
