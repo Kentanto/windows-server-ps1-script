@@ -711,14 +711,19 @@ $owner  = "Kentanto"
 $repo   = "windows-server-ps1-script"
 $branch = "master"
 
-# ROOT or change to folder like "images"
-$path = ""
+# FIX: do NOT use empty $path in API URL
+$url = "https://api.github.com/repos/$owner/$repo/contents?ref=$branch"
 
-$url = "https://api.github.com/repos/$owner/$repo/contents/$path?ref=$branch"
+try {
+    $items = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "PowerShell" }
+}
+catch {
+    Log-Red "GitHub API failed"
+    Log-Red $_
+    return
+}
 
-$items = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "PowerShell" }
-
-$images = $items | Where-Object {
+$images = @($items) | Where-Object {
     $_.type -eq "file" -and $_.name -match "\.(png|jpg|jpeg|gif|webp)$"
 }
 
@@ -732,8 +737,9 @@ if (Confirm-Step "create IIS website?") {
         New-Item -ItemType Directory -Path $sitePath -Force | Out-Null
     }
 
-    # CLEAR EXISTING CONTENT
     Get-ChildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+hildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
     $html = @"
 <!DOCTYPE html>
@@ -812,7 +818,6 @@ body {
 
     Set-Content -Path "$sitePath\index.html" -Value $html -Encoding UTF8
     Set-Content -Path "$sitePath\style.css" -Value $css -Encoding UTF8
-    
 
     foreach ($img in $images) {
 
@@ -875,7 +880,7 @@ if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
         New-GPO -Name $gpoName | Out-Null
     }
 
-    $wallpaperFile = "background_image.png"
+    $wallpaperFile = ($images | Where-Object { $_.name -match "background" }).name
     $wallpaperPath = "\\$domainName\SYSVOL\$domainName\scripts\Wallpapers\$wallpaperFile"
 
     Set-GPRegistryValue -Name $gpoName `
