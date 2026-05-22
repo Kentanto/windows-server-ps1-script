@@ -807,13 +807,26 @@ body {
 
     foreach ($img in $images) {
 
-        $fileName = Split-Path $img -Leaf
-        $outPath = "$sitePath\$fileName"
+    $fileName = Split-Path $img -Leaf
+    $outPath = "$wallDir\$fileName"
 
-        if (-not (Test-Path $outPath)) {
-            Invoke-WebRequest -Uri $img -OutFile $outPath
+    if (-not (Test-Path $outPath)) {
+
+        try {
+            Invoke-WebRequest `
+                -Uri $img `
+                -OutFile $outPath `
+                -UseBasicParsing `
+                -Headers @{ "User-Agent" = "Mozilla/5.0" }
+
+            Log-Green "Downloaded: $fileName"
+        }
+        catch {
+            Log-Red "Failed: $img"
+            Log-Red $_
         }
     }
+}
 
     Start-Service W3SVC -ErrorAction SilentlyContinue
     iisreset | Out-Null
@@ -844,19 +857,33 @@ if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
 
     foreach ($img in $images) {
 
-        $file = Split-Path $img -Leaf
-        $out = "$wallDir\$file"
+    $fileName = Split-Path $img -Leaf
+    $outPath = "$wallDir\$fileName"
 
-        if (-not (Test-Path $out)) {
-            Invoke-WebRequest -Uri $img -OutFile $out
+    if (-not (Test-Path $outPath)) {
+
+        try {
+            Invoke-WebRequest `
+                -Uri $img `
+                -OutFile $outPath `
+                -UseBasicParsing `
+                -Headers @{ "User-Agent" = "Mozilla/5.0" }
+
+            Log-Green "Downloaded: $fileName"
+        }
+        catch {
+            Log-Red "Failed: $img"
+            Log-Red $_
         }
     }
+}
 
     if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
         New-GPO -Name $gpoName | Out-Null
     }
 
-    $wallpaperPath = "\\$domainName\SYSVOL\$domainName\scripts\Wallpapers\wallpaper.jpg"
+    $wallpaperFile = "background_image.png"
+    $wallpaperPath = "\\$domainName\SYSVOL\$domainName\scripts\Wallpapers\$wallpaperFile"
 
     Set-GPRegistryValue -Name $gpoName `
         -Key "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" `
