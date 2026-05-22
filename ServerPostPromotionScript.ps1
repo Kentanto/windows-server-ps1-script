@@ -1,6 +1,5 @@
 
 # ===== Function to confirm each step with user =====
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 function Confirm-Step {
     param([string]$Message)
 
@@ -706,6 +705,23 @@ Log-Green "Startup script registered CORRECTLY (gpt.ini updated)"
 gpupdate /force
 }
 
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$owner  = "Kentanto"
+$repo   = "windows-server-ps1-script"
+$branch = "master"
+
+# ROOT or change to folder like "images"
+$path = ""
+
+$url = "https://api.github.com/repos/$owner/$repo/contents/$path?ref=$branch"
+
+$items = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "PowerShell" }
+
+$images = $items | Where-Object {
+    $_.type -eq "file" -and $_.name -match "\.(png|jpg|jpeg|gif|webp)$"
+}
+
 if (Confirm-Step "create IIS website?") {
 
     Import-Module WebAdministration
@@ -798,35 +814,22 @@ body {
     Set-Content -Path "$sitePath\style.css" -Value $css -Encoding UTF8
     
 
-    $images = @(
-    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image1.png",
-    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image2.png",
-    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image3.png",
-    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image4.png"
-)
-
     foreach ($img in $images) {
 
-    $fileName = Split-Path $img -Leaf
-    $outPath = "$wallDir\$fileName"
-
-    if (-not (Test-Path $outPath)) {
+        $outPath = Join-Path $sitePath $img.name
 
         try {
             Invoke-WebRequest `
-                -Uri $img `
+                -Uri $img.download_url `
                 -OutFile $outPath `
-                -UseBasicParsing `
                 -Headers @{ "User-Agent" = "Mozilla/5.0" }
 
-            Log-Green "Downloaded: $fileName"
+            Log-Green "IIS downloaded: $($img.name)"
         }
         catch {
-            Log-Red "Failed: $img"
-            Log-Red $_
+            Log-Red "IIS failed: $($img.name)"
         }
     }
-}
 
     Start-Service W3SVC -ErrorAction SilentlyContinue
     iisreset | Out-Null
@@ -851,32 +854,22 @@ if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
         New-Item -ItemType Directory -Path $wallDir -Force | Out-Null
     }
 
-    $images = @(
-    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/background_image.png"
-)
-
     foreach ($img in $images) {
 
-    $fileName = Split-Path $img -Leaf
-    $outPath = "$wallDir\$fileName"
-
-    if (-not (Test-Path $outPath)) {
+        $outPath = Join-Path $wallDir $img.name
 
         try {
             Invoke-WebRequest `
-                -Uri $img `
+                -Uri $img.download_url `
                 -OutFile $outPath `
-                -UseBasicParsing `
                 -Headers @{ "User-Agent" = "Mozilla/5.0" }
 
-            Log-Green "Downloaded: $fileName"
+            Log-Green "GPO downloaded: $($img.name)"
         }
         catch {
-            Log-Red "Failed: $img"
-            Log-Red $_
+            Log-Red "GPO failed: $($img.name)"
         }
     }
-}
 
     if (-not (Get-GPO -Name $gpoName -ErrorAction SilentlyContinue)) {
         New-GPO -Name $gpoName | Out-Null
