@@ -795,7 +795,7 @@ body {
 
     Set-Content -Path "$sitePath\index.html" -Value $html -Encoding UTF8
     Set-Content -Path "$sitePath\style.css" -Value $css -Encoding UTF8
-
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     $images = @(
         "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image1.png",
