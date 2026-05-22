@@ -184,6 +184,29 @@ if (Confirm-Step "Configure DHCP?") {
         -DnsServer $DNS
 
     Log-Green "DNS set"
+    # ===== DHCP EXCLUSIONS =====
+    $Exclusions = @(
+        "192.168.15.150",
+        "192.168.15.151",
+        "192.168.15.152",
+        "192.168.15.153",
+        "192.168.15.154",
+        "192.168.15.155",
+        "192.168.15.156",
+        "192.168.15.157",
+        "192.168.15.158",
+        "192.168.15.159"
+    )
+
+    foreach ($ip in $Exclusions) {
+        try {
+            Add-DhcpServerv4ExclusionRange -ScopeId $ScopeID -StartRange $ip -EndRange $ip -ErrorAction Stop
+            Log-Green "Excluded IP: $ip"
+        }
+        catch {
+            Log-Red "Failed to exclude: $ip"
+        }
+    }
 
     Log-Green "DHCP configuration complete"
 }
