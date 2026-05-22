@@ -798,10 +798,10 @@ body {
 
 
     $images = @(
-        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image1.png",
-        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image2.png",
-        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image3.png",
-        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/image4.png"
+        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image1.png",
+        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image2.png",
+        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image3.png",
+        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image4.png"
     )
 
     foreach ($img in $images) {
@@ -838,7 +838,7 @@ if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
     }
 
     $images = @(
-        "https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/wallpaper.jpg"
+        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/background_image.png"
     )
 
     foreach ($img in $images) {
