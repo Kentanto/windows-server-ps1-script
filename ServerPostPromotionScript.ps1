@@ -1,5 +1,6 @@
 
 # ===== Function to confirm each step with user =====
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 function Confirm-Step {
     param([string]$Message)
 
@@ -795,14 +796,14 @@ body {
 
     Set-Content -Path "$sitePath\index.html" -Value $html -Encoding UTF8
     Set-Content -Path "$sitePath\style.css" -Value $css -Encoding UTF8
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    
 
     $images = @(
-        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image1.png",
-        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image2.png",
-        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image3.png",
-        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/image4.png"
-    )
+    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image1.png",
+    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image2.png",
+    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image3.png",
+    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/image4.png"
+)
 
     foreach ($img in $images) {
 
@@ -838,8 +839,8 @@ if (Confirm-Step "deploy automatic wallpaper GPO for all users?") {
     }
 
     $images = @(
-        "https://github.com/Kentanto/windows-server-ps1-script/blob/master/background_image.png"
-    )
+    "https://raw.githubusercontent.com/Kentanto/windows-server-ps1-script/master/background_image.png"
+)
 
     foreach ($img in $images) {
 
