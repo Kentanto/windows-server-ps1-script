@@ -238,8 +238,10 @@ $ChildOUs = @(
         "LeadTeam",
         "IT",
         "HMS",
-        "Sales",
-        "Logistics"
+        "Economics/Sales",
+        "Logistics",
+        "ServiceAccounts",
+        "Activity_Hosts"
     )
 
     $Domain = Get-ADDomain
@@ -258,7 +260,7 @@ $ChildOUs = @(
         }
     }
 
-    $Groups = @("LeadTeam", "HMS", "Sales", "Logistics")
+    $Groups = @("LeadTeam", "HMS", "Economics/Sales", "Logistics", "ServiceAccounts", "Activity_Hosts")
     
     foreach ($GroupName in $Groups) {
         if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
@@ -287,24 +289,24 @@ $ChildOUs = @(
             Log-Green "Created user: $Name in $OU"
         }
     }
-Create-User "Frode Orebred" "LeadTeam"
-Create-User "Klara Orebredt" "HMS"
-Create-User "Janne Hansen" "Sales"
-Create-User "Fredrikk Larsen" "Sales"
-Create-User "Peder Karlsen" "Logistics"
-Create-User "Britt Larsen" "Logistics"
-Create-User "Torkjel Hansen" "Logistics"
+Create-User "Maria Solberg" "LeadTeam"
+Create-User "Henrik Dahl" "Economics/Sales"
+Create-User "Emil Karlsen" "IT"
+Create-User "Kristine Johansen" "Logistics"
+Create-User "Nora Hansen" "ServiceAccounts"
+Create-User "Sindre Olsen" "ServiceAccounts"
+Create-User "Julie Berg" "Activity_Hosts"
+Create-User "Tobias Nilsen" "Activity_Hosts"
+Create-User "Amalie Lund" "Activity_Hosts"
 
-Add-ADGroupMember -Identity "LeadTeam" -Members "Frode Orebred" -ErrorAction SilentlyContinue
-Log-Green "Added Frode to LeadTeam group"
-Add-ADGroupMember -Identity "HMS" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
-Add-ADGroupMember -Identity "Sales" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
-Add-ADGroupMember -Identity "Logistics" -Members "Klara Orebredt" -ErrorAction SilentlyContinue
-Log-Green "Added Klara to HMS/Sales/Logistics groups"
-Add-ADGroupMember -Identity "Sales" -Members "Janne Hansen", "Fredrikk Larsen" -ErrorAction SilentlyContinue
-Log-Green "Added Janne and Fredrikk to Sales group"
-Add-ADGroupMember -Identity "Logistics" -Members "Peder Karlsen", "Britt Larsen", "Torkjel Hansen" -ErrorAction SilentlyContinue
-Log-Green "Added Peder, Britt, and Torkjel to Logistics group"
+
+Add-ADGroupMember -Identity "LeadTeam" -Members "Maria Solberg"
+Add-ADGroupMember -Identity "Economics/Sales" -Members "Henrik Dahl"
+Add-ADGroupMember -Identity "IT" -Members "Emil Karlsen"
+Add-ADGroupMember -Identity "Logistics" -Members "Kristine Johansen"
+Add-ADGroupMember -Identity "ServiceAccounts" -Members "Nora Hansen", "Sindre Olsen"
+Add-ADGroupMember -Identity "Activity_Hosts" -Members "Julie Berg", "Tobias Nilsen", "Amalie Lund"
+Log-Green "Added users to OU and groups"
 
     try {
     Set-ADUser -Identity "Administrator" -PasswordNeverExpires $false
