@@ -238,7 +238,7 @@ $ChildOUs = @(
         "LeadTeam",
         "IT",
         "HMS",
-        "Economics/Sales",
+        "Economics_Sales",
         "Logistics",
         "ServiceAccounts",
         "Activity_Hosts"
@@ -260,7 +260,7 @@ $ChildOUs = @(
         }
     }
 
-    $Groups = @("LeadTeam", "HMS", "Economics/Sales", "Logistics", "ServiceAccounts", "Activity_Hosts")
+    $Groups = @("LeadTeam", "HMS", "Economics_Sales", "Logistics", "ServiceAccounts", "Activity_Hosts")
     
     foreach ($GroupName in $Groups) {
         if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
@@ -290,7 +290,7 @@ $ChildOUs = @(
         }
     }
 Create-User "Maria Solberg" "LeadTeam"
-Create-User "Henrik Dahl" "Economics/Sales"
+Create-User "Henrik Dahl" "Economics_Sales"
 Create-User "Emil Karlsen" "IT"
 Create-User "Kristine Johansen" "Logistics"
 Create-User "Nora Hansen" "ServiceAccounts"
@@ -301,7 +301,7 @@ Create-User "Amalie Lund" "Activity_Hosts"
 
 
 Add-ADGroupMember -Identity "LeadTeam" -Members "Maria Solberg"
-Add-ADGroupMember -Identity "Economics/Sales" -Members "Henrik Dahl"
+Add-ADGroupMember -Identity "Economics_Sales" -Members "Henrik Dahl"
 Add-ADGroupMember -Identity "IT" -Members "Emil Karlsen"
 Add-ADGroupMember -Identity "Logistics" -Members "Kristine Johansen"
 Add-ADGroupMember -Identity "ServiceAccounts" -Members "Nora Hansen", "Sindre Olsen"
