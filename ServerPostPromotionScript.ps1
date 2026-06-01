@@ -29,10 +29,10 @@ function Confirm-Step {
     }
 }
 
-$IP        = "192.168.15.177"
+$IP        = "192.168.20.2"
 $Prefix    = 24
-$Gateway   = "192.168.15.1"
-$DNS       = "192.168.15.1"
+$Gateway   = "192.168.20.1"
+$DNS       = "192.168.20.2"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -113,12 +113,12 @@ if (Confirm-Step "Set static IP?") {
 
 if (Confirm-Step "Configure DHCP?") {
     $ScopeName = "LAN Scope"
-    $ScopeID   = "192.168.15.0"
-    $StartIP   = "192.168.15.150"
-    $EndIP     = "192.168.15.200"
+    $ScopeID   = "192.168.20.0"
+    $StartIP   = "192.168.20.2"
+    $EndIP     = "192.168.20.200"
     $Subnet    = "255.255.255.0"
-    $Gateway   = "192.168.15.1"
-    $DNS       = "127.0.0.1"
+    $Gateway   = "192.168.20.1"
+    $DNS       = "192.168.20.1"
     $LeaseTime = "2.00:00:00"
 
     try {
@@ -171,31 +171,38 @@ if (Confirm-Step "Configure DHCP?") {
         Log-Green "DHCP scope created"
     }
 
-    # Set gateway option (Router = 003)
     Set-DhcpServerv4OptionValue `
         -ScopeId $ScopeID `
         -Router $Gateway
 
     Log-Green "Gateway set"
 
-    # Set DNS option (006)
     Set-DhcpServerv4OptionValue `
         -ScopeId $ScopeID `
         -DnsServer $DNS
 
     Log-Green "DNS set"
-    # ===== DHCP EXCLUSIONS =====
     $Exclusions = @(
-        "192.168.15.150",
-        "192.168.15.151",
-        "192.168.15.152",
-        "192.168.15.153",
-        "192.168.15.154",
-        "192.168.15.155",
-        "192.168.15.156",
-        "192.168.15.157",
-        "192.168.15.158",
-        "192.168.15.159"
+        "192.168.20.2",
+        "192.168.20.3",
+        "192.168.20.4",
+        "192.168.20.5",
+        "192.168.20.6",
+        "192.168.20.7",
+        "192.168.20.8",
+        "192.168.20.9",
+        "192.168.20.10",
+        "192.168.20.11",
+        "192.168.20.12",
+        "192.168.20.13",
+        "192.168.20.14",
+        "192.168.20.15",
+        "192.168.20.16",
+        "192.168.20.17",
+        "192.168.20.18",
+        "192.168.20.19",
+        "192.168.20.20",
+        "192.168.20.21"
     )
 
     foreach ($ip in $Exclusions) {
@@ -432,9 +439,6 @@ if (Confirm-Step "set up shared folders and permissions?") {
     Log-Green "Shared folders and permissions configured"
 
 
-# ==========================================
-# AUTO DRIVE MAPPING VIA GPO (LAB STRUCTURE)
-# ==========================================
 
 Import-Module ActiveDirectory
 Import-Module GroupPolicy
@@ -458,9 +462,6 @@ $UNCPath    = "\\$ServerFQDN\$ShareName"
 Write-Host "Setting up drive mapping..." -ForegroundColor Cyan
 Write-Host "Target: $UNCPath" -ForegroundColor Cyan
 
-# ==========================================
-# CREATE / GET GPO
-# ==========================================
 
 $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
 
@@ -472,9 +473,6 @@ else {
     Log-Green "GPO already exists"
 }
 
-# ==========================================
-# LINK GPO TO ROOT LAB OU (IMPORTANT FIX)
-# ==========================================
 
 $existingLinks = (Get-GPInheritance -Target $RootPath).GpoLinks.DisplayName
 
@@ -486,17 +484,10 @@ else {
     Log-Green "GPO already linked to LAB OU"
 }
 
-# ==========================================
-# SECURITY FILTERING (IMPORTANT)
-# ==========================================
-
 Set-GPPermission -Name $GpoName -TargetName "Authenticated Users" -TargetType Group -PermissionLevel GpoApply
 
-# ==========================================
-# DRIVE MAPPING (GROUP POLICY PREFERENCES METHOD)
-# ==========================================
 
-# This is the correct GPP registry-based mapping method
+# GPP registry-based mapping method, very fun
 
 Set-GPRegistryValue `
     -Name $GpoName `
@@ -533,9 +524,6 @@ Set-GPRegistryValue `
     -Type DWord `
     -Value 4
 
-# ==========================================
-# FORCE UPDATE
-# ==========================================
 
 gpupdate /force
 
@@ -551,19 +539,17 @@ Write-Host ""
 
 }
 
-
+# Attempted auto software deployment, doesnt quite work, but makes the manuall job easier later
 if (Confirm-Step "set up software deployment via GPO?") {
 
     Import-Module ActiveDirectory
     Import-Module GroupPolicy
 
-    # ===== DOMAIN INFO =====
     $Domain     = Get-ADDomain
     $DomainDN   = $Domain.DistinguishedName
     $DomainName = $Domain.DNSRoot
     $Server     = $env:COMPUTERNAME
-
-    # ===== CONFIG =====
+    # by making the structure
     $RootOU       = "Lab"
     $LabOU        = "OU=$RootOU,$DomainDN"
     $ComputerOU   = "OU=Computers,$LabOU"
@@ -574,20 +560,14 @@ if (Confirm-Step "set up software deployment via GPO?") {
     $SoftwarePath = "$BasePath\Software"
     $SoftwareUNC  = "\\$Server.$DomainName\Software"
 
-    # ==========================================
-    # ✅ ENSURE COMPUTERS GO INTO LAB OU
-    # ==========================================
     redircmp $ComputerOU
     Log-Green "Default computer location set to Lab OU"
 
-    # Move existing computers (IMPORTANT)
+    # Move existing computers to the correct OU to apply GPO to them
     Get-ADComputer -Filter * | ForEach-Object {
         try { Move-ADObject $_.DistinguishedName -TargetPath $ComputerOU -ErrorAction Stop } catch {}
     }
 
-    # ==========================================
-    # ✅ CREATE SOFTWARE SHARE
-    # ==========================================
     New-Item -ItemType Directory -Path $SoftwarePath -Force | Out-Null
 
     if (-not (Get-SmbShare -Name "Software" -ErrorAction SilentlyContinue)) {
@@ -601,10 +581,7 @@ if (Confirm-Step "set up software deployment via GPO?") {
     icacls $SoftwarePath /grant "Domain Computers:(OI)(CI)RX" | Out-Null
 
     Log-Green "Software share ready"
-
-    # ==========================================
-    # ✅ DOWNLOAD SOFTWARE
-    # ==========================================
+    # Download it in the previously set up paths
     Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2409-x64.msi" `
         -OutFile "$SoftwarePath\7zip.msi" -UseBasicParsing
 
@@ -613,17 +590,13 @@ if (Confirm-Step "set up software deployment via GPO?") {
 
     Log-Green "Software downloaded"
 
-    # ==========================================
-    # ✅ CREATE GPO + LINK
-    # ==========================================
     $gpo = Get-GPO -Name $GpoName -ErrorAction SilentlyContinue
     if (-not $gpo) { $gpo = New-GPO -Name $GpoName }
 
     if (-not ((Get-GPInheritance -Target $LabOU).GpoLinks.DisplayName -contains $GpoName)) {
         New-GPLink -Name $GpoName -Target $LabOU -LinkEnabled Yes | Out-Null
     }
-
-    # IMPORTANT: ALLOW ALL COMPUTERS
+    # And allowing them to access the software
     Set-GPPermission -Name $GpoName `
         -TargetName "Authenticated Users" `
         -TargetType Group `
@@ -632,16 +605,13 @@ if (Confirm-Step "set up software deployment via GPO?") {
     Log-Green "GPO ready and linked"
 
 
-# ==========================================
-# ✅ CREATE STARTUP SCRIPT (PROPER WAY)
-# ==========================================
 $gpoID = $gpo.Id.ToString()
 
 $scriptFolder = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoID}\Machine\Scripts\Startup"
 New-Item -ItemType Directory -Path $scriptFolder -Force | Out-Null
 
 $scriptFile = "$scriptFolder\install.ps1"
-
+# This is where it fails tho as i cant find a good method for Logon to actually run the script and apply it. The issue is most likely permission to run the installers
 @"
 Start-Sleep 30
 
@@ -670,9 +640,6 @@ Get-ChildItem `$share -Filter *.msi | ForEach-Object {
 Add-Content `$log "FINISHED"
 "@ | Out-File $scriptFile -Encoding UTF8 -Force
 
-# ==========================================
-# ✅ CREATE BATCH WRAPPER (FIXED PATH)
-# ==========================================
 $batchScriptName = "run-installer.bat"
 
 @"
@@ -680,9 +647,6 @@ $batchScriptName = "run-installer.bat"
 powershell.exe -ExecutionPolicy Bypass -NoProfile -File "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoID}\Machine\Scripts\Startup\install.ps1"
 "@ | Out-File "$scriptFolder\$batchScriptName" -Encoding ASCII -Force
 
-# ==========================================
-# ✅ REGISTER SCRIPT (REAL WAY)
-# ==========================================
 $scriptsIniPath = "$scriptFolder\scripts.ini"
 
 @"
@@ -690,10 +654,6 @@ $scriptsIniPath = "$scriptFolder\scripts.ini"
 0CmdLine=$batchScriptName
 0Parameters=
 "@ | Out-File $scriptsIniPath -Encoding ASCII -Force
-
-# ==========================================
-# ✅ BUMP GPO VERSION (THIS WAS MISSING)
-# ==========================================
 
 $gptIni = "\\$DomainName\SYSVOL\$DomainName\Policies\{$gpoID}\gpt.ini"
 
@@ -714,44 +674,35 @@ else {
         $content | Set-Content $gptIni
     }
     else {
-        # fallback if Version line missing
         Add-Content $gptIni "`nVersion=1"
     }
 }
 
-
+# and so it doesnt really work as i havent figured out how to bypass windows security safely and consistently for this purpose 
 Log-Green "Startup script registered CORRECTLY (gpt.ini updated)"
 
-# ==========================================
-# ✅ FINAL
-# ==========================================
 gpupdate /force
 }
+# This is something completely different, basicly a bunch of pictures i want for the IIS website and desktop wallpaper for all computer under the domain
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-$owner  = "Kentanto"
-$repo   = "windows-server-ps1-script"
-$branch = "master"
-
-# FIX: do NOT use empty $path in API URL
-$url = "https://api.github.com/repos/$owner/$repo/contents?ref=$branch"
-
-try {
-    $items = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "PowerShell" }
-}
-catch {
-    Log-Red "GitHub API failed"
-    Log-Red $_
-    return
-}
-
-$images = @($items) | Where-Object {
-    $_.type -eq "file" -and $_.name -match "\.(png|jpg|jpeg|gif|webp)$"
-}
 
 if (Confirm-Step "create IIS website?") {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+    $url = "https://api.github.com/repos/Kentanto/windows-server-ps1-script/contents?ref=master"
+
+    try {
+        $items = Invoke-RestMethod -Uri $url -Headers @{ "User-Agent" = "PowerShell" }
+    }
+    catch {
+        Log-Red "GitHub API failed"
+        Log-Red $_
+        return
+    }
+
+    $images = @($items) | Where-Object {
+        $_.type -eq "file" -and $_.name -match "\.(png|jpg|jpeg|gif|webp)$"
+    }
     Import-Module WebAdministration
 
     $sitePath = "C:\inetpub\wwwroot"
@@ -761,19 +712,20 @@ if (Confirm-Step "create IIS website?") {
     }
 
     Get-ChildItem $sitePath -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
+    
+    # Funny way to automatically make website on the server XD i love this way.
     $html = @"
 <!DOCTYPE html>
 <html lang="no">
 <head>
     <meta charset="UTF-8">
-    <title>Kriseberedskap AS</title>
+    <title>Innlandet Aktivitetsenter AS</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
     <div class="hero">
-        <h1>Welcome to Kriseberedaskap AS, her er vi alle F.Orebredt.</h1>
+        <h1>Welcome to Innlandet Aktivitetsenter AS, Dette er vår første testside</h1>
 
         <div class="buttons">
             <button>Om oss</button>
