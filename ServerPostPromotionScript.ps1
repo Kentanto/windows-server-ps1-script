@@ -119,7 +119,7 @@ if (Confirm-Step "Configure DHCP?") {
     $Subnet    = "255.255.255.0"
     $Gateway   = "192.168.20.1"
     $DNS       = "192.168.20.2"
-    $LeaseTime = "2.00:00:00"
+    $LeaseTime = "5.00:00:00"
 
     try {
     try {
