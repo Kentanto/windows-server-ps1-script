@@ -118,7 +118,7 @@ if (Confirm-Step "Configure DHCP?") {
     $EndIP     = "192.168.20.200"
     $Subnet    = "255.255.255.0"
     $Gateway   = "192.168.20.1"
-    $DNS       = "192.168.20.1"
+    $DNS       = "192.168.20.2"
     $LeaseTime = "2.00:00:00"
 
     try {
@@ -260,7 +260,7 @@ $ChildOUs = @(
         }
     }
 
-    $Groups = @("LeadTeam", "HMS", "Economics_Sales", "Logistics", "ServiceAccounts", "Activity_Hosts")
+    $Groups = @("LeadTeam", "HMS", "Economics_Sales", "Logistics", "ServiceAccounts", "Activity_Hosts", "IT")
     
     foreach ($GroupName in $Groups) {
         if (-not (Get-ADGroup -Filter "Name -eq '$GroupName'" -ErrorAction SilentlyContinue)) {
