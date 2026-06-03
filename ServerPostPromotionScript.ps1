@@ -29,10 +29,10 @@ function Confirm-Step {
     }
 }
 
-$IP        = "192.168.20.2"
+$IP        = "192.168.15.2"
 $Prefix    = 24
-$Gateway   = "192.168.20.1"
-$DNS       = "192.168.20.2"
+$Gateway   = "192.168.15.1"
+$DNS       = "192.168.15.2"
 
 # ===== LOGGING =====
 function Log-Green {
@@ -113,12 +113,12 @@ if (Confirm-Step "Set static IP?") {
 
 if (Confirm-Step "Configure DHCP?") {
     $ScopeName = "LAN Scope"
-    $ScopeID   = "192.168.20.0"
-    $StartIP   = "192.168.20.2"
-    $EndIP     = "192.168.20.200"
+    $ScopeID   = "192.168.15.0"
+    $StartIP   = "192.168.15.2"
+    $EndIP     = "192.168.15.200"
     $Subnet    = "255.255.255.0"
-    $Gateway   = "192.168.20.1"
-    $DNS       = "192.168.20.2"
+    $Gateway   = "192.168.15.1"
+    $DNS       = "192.168.15.2"
     $LeaseTime = "5.00:00:00"
 
     try {
@@ -183,26 +183,26 @@ if (Confirm-Step "Configure DHCP?") {
 
     Log-Green "DNS set"
     $Exclusions = @(
-        "192.168.20.2",
-        "192.168.20.3",
-        "192.168.20.4",
-        "192.168.20.5",
-        "192.168.20.6",
-        "192.168.20.7",
-        "192.168.20.8",
-        "192.168.20.9",
-        "192.168.20.10",
-        "192.168.20.11",
-        "192.168.20.12",
-        "192.168.20.13",
-        "192.168.20.14",
-        "192.168.20.15",
-        "192.168.20.16",
-        "192.168.20.17",
-        "192.168.20.18",
-        "192.168.20.19",
-        "192.168.20.20",
-        "192.168.20.21"
+        "192.168.15.2",
+        "192.168.15.3",
+        "192.168.15.4",
+        "192.168.15.5",
+        "192.168.15.6",
+        "192.168.15.7",
+        "192.168.15.8",
+        "192.168.15.9",
+        "192.168.15.10",
+        "192.168.15.11",
+        "192.168.15.12",
+        "192.168.15.13",
+        "192.168.15.14",
+        "192.168.15.15",
+        "192.168.15.16",
+        "192.168.15.17",
+        "192.168.15.18",
+        "192.168.15.19",
+        "192.168.15.20",
+        "192.168.15.21"
     )
 
     foreach ($ip in $Exclusions) {
@@ -376,7 +376,7 @@ Log-Green "Added users to OU and groups"
 }
 # ===== SHARED FOLDERS =====
 if (Confirm-Step "set up shared folders and permissions?") {
-    $BasePath = "D:\Shares"
+    $BasePath = "P:\Shares"
     $WorkPath = "$BasePath\Work"
     $LeadPath = "$BasePath\LeadTeam"
     $SoftwarePath = "$BasePath\Software"
@@ -558,7 +558,7 @@ if (Confirm-Step "set up software deployment via GPO?") {
 
     $GpoName      = "Software-Deployment"
 
-    $BasePath     = "D:\Shares"
+    $BasePath     = "P:\Shares"
     $SoftwarePath = "$BasePath\Software"
     $SoftwareUNC  = "\\$Server.$DomainName\Software"
 
