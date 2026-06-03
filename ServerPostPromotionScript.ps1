@@ -272,21 +272,42 @@ $ChildOUs = @(
     function Create-User {
         param($Name, $OU)
 
+        # Generate valid SamAccountName from full name (firstname.lastname, max 20 chars)
+        $nameParts = $Name -split " "
+        $samAccountName = if ($nameParts.Count -ge 2) {
+            "$($nameParts[0]).$($nameParts[-1])".ToLower() -replace "[^a-z0-9.]", ""
+        } else {
+            $Name.ToLower() -replace "[^a-z0-9]", ""
+        }
+        
+        # Trim to 20 characters if needed
+        if ($samAccountName.Length -gt 20) {
+            $samAccountName = $samAccountName.Substring(0, 20)
+        }
+
         $userPath = "OU=$OU,$rootPath"
 
-        if (-not (Get-ADUser -Filter "SamAccountName -eq '$Name'" -ErrorAction SilentlyContinue)) {
-            $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
-            New-ADUser `
-                -Name $Name `
-                -SamAccountName $Name `
-                -UserPrincipalName "$Name@$($Domain.DNSRoot)" `
-                -Path $userPath `
-                -AccountPassword $password `
-                -Enabled $true
+        if (-not (Get-ADUser -Filter "SamAccountName -eq '$samAccountName'" -ErrorAction SilentlyContinue)) {
+            try {
+                $password = ConvertTo-SecureString "Temp123!" -AsPlainText -Force
+                New-ADUser `
+                    -Name $Name `
+                    -SamAccountName $samAccountName `
+                    -GivenName $nameParts[0] `
+                    -Surname $nameParts[-1] `
+                    -UserPrincipalName "$samAccountName@$($Domain.DNSRoot)" `
+                    -Path $userPath `
+                    -AccountPassword $password `
+                    -Enabled $true -ErrorAction Stop
 
-            Set-ADUser -Identity $Name -ChangePasswordAtLogon $true
+                Set-ADUser -Identity $samAccountName -ChangePasswordAtLogon $true
 
-            Log-Green "Created user: $Name in $OU"
+                Log-Green "Created user: $Name (sam: $samAccountName) in $OU"
+            } catch {
+                Log-Red "Failed to create user $Name : $_"
+            }
+        } else {
+            Log-Green "User $samAccountName already exists"
         }
     }
 Create-User "Maria Solberg" "LeadTeam"
